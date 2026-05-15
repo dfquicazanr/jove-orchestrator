@@ -1,0 +1,11 @@
+# Optional override when printers use Tailscale MagicDNS hostnames (e.g. la-porqueriza).
+#
+# Requires Tailscale on the Docker host with MagicDNS enabled.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.tailscale.yml up -d --build api
+#
+services:
+  api:
+    dns:
+      - 100.100.100.100
+      - 8.8.8.8
