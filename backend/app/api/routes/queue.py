@@ -4,25 +4,55 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_db, require_manager, require_viewer_or_manager
-from app.models.print_queue import PrintQueueItem
+from app.models.print_queue import PrintQueueItem, PrintQueueStatus
 from app.models.printer import Printer
 from app.models.user import User
-from app.schemas.queue import PlanRequest, PrintQueueItemOut, QueueItemPatch
+from app.schemas.queue import (
+    GCodeFileBrief,
+    PlanRequest,
+    PrintQueueItemDetailOut,
+    PrintQueueItemOut,
+    QueueItemPatch,
+)
 from app.services.planner import suggest_assignments
 
 router = APIRouter()
 
 
-@router.get("/items", response_model=list[PrintQueueItemOut])
+def _queue_item_detail(item: PrintQueueItem) -> PrintQueueItemDetailOut:
+    gf = item.gcode_file
+    printer_name = item.assigned_printer.name if item.assigned_printer else None
+    return PrintQueueItemDetailOut(
+        id=item.id,
+        gcode_file_id=item.gcode_file_id,
+        copy_index=item.copy_index,
+        priority=item.priority,
+        assigned_printer_id=item.assigned_printer_id,
+        status=item.status,
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+        gcode_file=GCodeFileBrief.model_validate(gf),
+        assigned_printer_name=printer_name,
+    )
+
+
+@router.get("/items", response_model=list[PrintQueueItemDetailOut])
 def list_queue_items(
     status_filter: str | None = None,
     _: User = Depends(require_viewer_or_manager),
     db: Session = Depends(get_db),
 ):
-    q = db.query(PrintQueueItem)
+    q = (
+        db.query(PrintQueueItem)
+        .options(
+            joinedload(PrintQueueItem.gcode_file),
+            joinedload(PrintQueueItem.assigned_printer),
+        )
+    )
     if status_filter:
         q = q.filter(PrintQueueItem.status == status_filter)
-    return q.order_by(PrintQueueItem.priority.desc(), PrintQueueItem.id.asc()).all()
+    rows = q.order_by(PrintQueueItem.priority.desc(), PrintQueueItem.id.asc()).all()
+    return [_queue_item_detail(row) for row in rows]
 
 
 @router.patch("/items/{item_id}", response_model=PrintQueueItemOut)
@@ -48,7 +78,7 @@ def patch_queue_item(
     return item
 
 
-@router.post("/plan", response_model=list[PrintQueueItemOut])
+@router.post("/plan", response_model=list[PrintQueueItemDetailOut])
 def generate_plan(
     body: PlanRequest,
     _: User = Depends(require_manager),
@@ -60,9 +90,20 @@ def generate_plan(
         waste_factor=body.waste_factor,
     )
     db.commit()
+    out: list[PrintQueueItemDetailOut] = []
     for it in items:
         db.refresh(it)
-    return items
+        item = (
+            db.query(PrintQueueItem)
+            .options(
+                joinedload(PrintQueueItem.gcode_file),
+                joinedload(PrintQueueItem.assigned_printer),
+            )
+            .filter(PrintQueueItem.id == it.id)
+            .one()
+        )
+        out.append(_queue_item_detail(item))
+    return out
 
 
 @router.post("/items/{item_id}/complete-success", response_model=PrintQueueItemOut)

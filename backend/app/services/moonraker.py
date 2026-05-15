@@ -19,7 +19,20 @@ async def moonraker_get_json(base_url: str, path: str, api_key: str | None = Non
 
 
 def derive_printer_status_from_status(status: dict[str, Any]) -> str | None:
-    """Map Klipper object status (``print_stats``, ``webhooks``, …) to ``PrinterStatus`` value."""
+    """Map Klipper object status (``print_stats``, ``webhooks``, …) to ``PrinterStatus`` value.
+
+    Moonraker keeps ``print_stats.state`` (e.g. ``standby``) across Klipper restarts; when Klipper
+    shuts down, ``webhooks.state`` becomes ``shutdown`` / ``startup`` while ``print_stats`` may still
+    look idle. Always consult ``webhooks`` first for those host states.
+    """
+    wh = status.get("webhooks")
+    if isinstance(wh, dict):
+        wh_raw = str(wh.get("state") or "").lower().strip()
+        if wh_raw in ("startup", "shutdown"):
+            return PrinterStatus.offline.value
+        if wh_raw == "error":
+            return PrinterStatus.error.value
+
     ps = status.get("print_stats")
     if isinstance(ps, dict):
         raw = str(ps.get("state") or "").lower().strip()
@@ -36,13 +49,10 @@ def derive_printer_status_from_status(status: dict[str, Any]) -> str | None:
         if raw == "error":
             return PrinterStatus.error.value
 
-    wh = status.get("webhooks")
     if isinstance(wh, dict):
-        raw = str(wh.get("state") or "").lower().strip()
-        if raw == "ready":
+        wh_raw = str(wh.get("state") or "").lower().strip()
+        if wh_raw == "ready":
             return PrinterStatus.ready.value
-        if raw in ("startup", "shutdown"):
-            return PrinterStatus.offline.value
 
     return None
 
@@ -81,6 +91,8 @@ def moonraker_error_from_status(status: dict[str, Any]) -> str | None:
         msg = wh.get("state_message")
         if state in ("error", "shutdown") and msg:
             return str(msg)
+        if state == "startup":
+            return str(msg) if msg else "Klipper is starting"
     ps = status.get("print_stats")
     if isinstance(ps, dict) and str(ps.get("state") or "").lower().strip() == "error":
         msg = ps.get("message")

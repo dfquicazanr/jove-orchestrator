@@ -16,3 +16,5 @@ def test_merge_and_derive_from_notify_delta():
     assert derive_printer_status_from_status(acc) == "ready"
     merge_printer_status_objects(acc, {"print_stats": {"state": "printing"}})
     assert derive_printer_status_from_status(acc) == "printing"
+    merge_printer_status_objects(acc, {"webhooks": {"state": "shutdown", "state_message": "Klipper disconnected"}})
+    assert derive_printer_status_from_status(acc) == "offline"

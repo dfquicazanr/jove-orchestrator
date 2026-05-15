@@ -392,6 +392,15 @@ async def moonraker_ping(
     apply_ping_to_printer(p, ok, err, derived)
     p.updated_at = datetime.now(timezone.utc)
     db.commit()
+    db.refresh(p)
+    if get_settings().moonraker_watch_enabled:
+        await moonraker_watch.broadcast_printer_state(
+            p.id,
+            last_known_status=p.last_known_status,
+            last_moonraker_error=p.last_moonraker_error,
+            connected=ok,
+            persist=False,
+        )
     return MoonrakerPingResult(ok=ok, message=err)
 
 

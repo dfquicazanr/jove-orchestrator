@@ -103,7 +103,7 @@ Work top-to-bottom within a section when possible. **Definition of done** for a 
 
 - [x] **Plan generation** — `POST /queue/plan` (greedy).
 - [x] **Manual overrides** — `PATCH /queue/items/{id}`.
-- [ ] **Planner UI** — Queue page is read-only table; no upload/plan/run in UI.
+- [x] **Planner UI** — Upload G-code, waste-factor plan, editable assignments table.
 - [ ] **Executor** — No background loop to dispatch assigned jobs.
 - [x] **Cleanup state** — `finished_awaiting_cleanup` from Moonraker `print_stats.complete`.
 
@@ -121,7 +121,7 @@ Work top-to-bottom within a section when possible. **Definition of done** for a 
 - [x] **Send G-code** — Per-printer upload from Farm (manager).
 - [x] **Real-time status** — SSE merge on farm cards.
 - [x] **Printer modals** — Connection (incl. test), filament, send G-code.
-- [ ] **Queue UI** — List only; no upload, plan, or dispatch.
+- [x] **Queue UI** — Upload, plan drafts, manual printer/priority/cancel (no auto-dispatch yet).
 - [ ] **User admin UI** — API only (`/users`).
 - [ ] **Accessibility pass** — Keyboard/contrast/breakpoints beyond baseline.
 

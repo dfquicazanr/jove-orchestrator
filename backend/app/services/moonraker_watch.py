@@ -147,12 +147,13 @@ class MoonrakerWatchService:
     async def _watch_printer_loop(self, printer_id: int, base_url: str, api_key: str | None) -> None:
         backoff = RECONNECT_BASE_SEC
         while self._running and printer_id in self._printer_targets:
+            session_failed = False
             try:
                 await self._watch_printer_session(printer_id, base_url, api_key)
-                backoff = RECONNECT_BASE_SEC
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                session_failed = True
                 log.warning("moonraker ws printer %s: %s", printer_id, exc)
                 await self._publish(
                     printer_id,
@@ -160,10 +161,22 @@ class MoonrakerWatchService:
                     format_moonraker_connection_error(exc, base_url=base_url),
                     connected=False,
                 )
+            else:
+                # Connection closed cleanly (Moonraker or network dropped TCP) — still offline until reconnect.
+                log.info("moonraker ws printer %s: session closed, reconnecting", printer_id)
+                await self._publish(
+                    printer_id,
+                    PrinterStatus.offline.value,
+                    None,
+                    connected=False,
+                )
             if not self._running or printer_id not in self._printer_targets:
                 break
+            if session_failed:
+                backoff = min(backoff * 1.5, RECONNECT_MAX_SEC)
+            else:
+                backoff = RECONNECT_BASE_SEC
             await asyncio.sleep(backoff)
-            backoff = min(backoff * 1.5, RECONNECT_MAX_SEC)
 
     async def _watch_printer_session(
         self, printer_id: int, base_url: str, api_key: str | None
@@ -246,7 +259,9 @@ class MoonrakerWatchService:
         derived = derive_printer_status_from_status(status)
         if derived is None:
             derived = PrinterStatus.offline.value if not connected else PrinterStatus.ready.value
-        err = moonraker_error_from_status(status) if derived == PrinterStatus.error.value else None
+        err = moonraker_error_from_status(status)
+        if derived not in (PrinterStatus.error.value, PrinterStatus.offline.value):
+            err = None
         await self._publish(printer_id, derived, err, connected=connected)
 
     async def _publish(
@@ -256,6 +271,7 @@ class MoonrakerWatchService:
         error: str | None,
         *,
         connected: bool,
+        persist: bool = True,
     ) -> None:
         update = PrinterLiveUpdate(
             printer_id=printer_id,
@@ -279,7 +295,26 @@ class MoonrakerWatchService:
                     q.put_nowait(payload)
                 except asyncio.QueueFull:
                     pass
-            await self._maybe_persist(printer_id, status, error, connected)
+            if persist:
+                await self._maybe_persist(printer_id, status, error, connected)
+
+    async def broadcast_printer_state(
+        self,
+        printer_id: int,
+        *,
+        last_known_status: str,
+        last_moonraker_error: str | None,
+        connected: bool,
+        persist: bool = True,
+    ) -> None:
+        """Publish a snapshot to SSE clients (optional DB write via ``persist``)."""
+        await self._publish(
+            printer_id,
+            last_known_status,
+            last_moonraker_error,
+            connected=connected,
+            persist=persist,
+        )
 
     async def _maybe_persist(
         self, printer_id: int, status: str, error: str | None, connected: bool
