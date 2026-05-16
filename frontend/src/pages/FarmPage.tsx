@@ -6,8 +6,10 @@ import { AddPrinterCard } from '../components/AddPrinterCard'
 import { PrinterConnectionModal } from '../components/PrinterConnectionModal'
 import { PrinterFilamentModal } from '../components/PrinterFilamentModal'
 import { MaterialPreheatSettingsModal } from '../components/MaterialPreheatSettingsModal'
+import { HomeAssistantSettingsModal } from '../components/HomeAssistantSettingsModal'
 import { PrinterFarmCard } from '../components/PrinterFarmCard'
 import { FarmBulkConfirmModal, type FarmBulkConfirmState } from '../components/FarmBulkConfirmModal'
+import { HaPrinterPowerOffModal } from '../components/HaPrinterPowerOffModal'
 import { SendGcodeModal } from '../components/SendGcodeModal'
 import { usePrinterStatusStream, type PrinterLiveUpdate } from '../hooks/usePrinterStatusStream'
 import { applyPrinterLiveUpdates } from '../lib/mergePrinterLive'
@@ -34,6 +36,7 @@ type ConnectionModal = {
   mode: 'create' | 'edit'
   printer: Printer | null
   suggestedName?: string
+  highlightHaPower?: boolean
 }
 type FilamentModal = { type: 'filament'; printer: Printer }
 type SendGcodeModalState = { type: 'sendGcode'; printer: Printer }
@@ -58,9 +61,12 @@ export function FarmPage() {
   const [controlBusy, setControlBusy] = useState<ControlBusy | null>(null)
   const [preheatPresets, setPreheatPresets] = useState<MaterialPreheatPreset[]>([])
   const [preheatSettingsOpen, setPreheatSettingsOpen] = useState(false)
+  const [haSettingsOpen, setHaSettingsOpen] = useState(false)
   const [bulkActionsBusy, setBulkActionsBusy] = useState(false)
   const [bulkPreheatPresetId, setBulkPreheatPresetId] = useState('')
   const [bulkConfirm, setBulkConfirm] = useState<FarmBulkConfirmState | null>(null)
+  /** Home Assistant mains power-off — gated behind confirmation modal. */
+  const [haPowerOffConfirmPrinter, setHaPowerOffConfirmPrinter] = useState<Printer | null>(null)
   const useMocks = mockPrintersMode()
   const liveStatus = usePrinterStatusStream(!useMocks)
 
@@ -152,6 +158,12 @@ export function FarmPage() {
       delete next[p.id]
       return next
     })
+
+    if (action === 'power_off') {
+      setHaPowerOffConfirmPrinter(p)
+      return
+    }
+
     setControlBusy({ printerId: p.id, action })
 
     const base = `/printers/${p.id}`
@@ -195,9 +207,6 @@ export function FarmPage() {
         case 'power_on':
           res = await apiFetch(`${base}/power/on`, { method: 'POST' })
           break
-        case 'power_off':
-          res = await apiFetch(`${base}/power/off`, { method: 'POST' })
-          break
         default:
           return
       }
@@ -217,11 +226,43 @@ export function FarmPage() {
     }
   }
 
+  /** Used after HA power-off confirmation modal — same HTTP + feedback as power_on in onControlAction. */
+  async function executeConfirmedHaPrinterPowerOff(p: Printer) {
+    setActionError(null)
+    setControlBusy({ printerId: p.id, action: 'power_off' })
+    const base = `/printers/${p.id}`
+    try {
+      const res = await apiFetch<{ ok: boolean; message?: string | null }>(`${base}/power/off`, {
+        method: 'POST',
+      })
+      const text = res.message ?? `${p.name}: mains power-off sent`
+      setActionNotice(text)
+      setControlFeedback((prev) => ({ ...prev, [p.id]: { kind: 'ok', text } }))
+      setHaPowerOffConfirmPrinter(null)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Command failed'
+      const friendly =
+        msg === 'Not Found'
+          ? 'Power API not found — rebuild the API container (`docker compose build api && docker compose up -d api`).'
+          : msg
+      setActionError(friendly)
+      setControlFeedback((prev) => ({ ...prev, [p.id]: { kind: 'err', text: friendly } }))
+    } finally {
+      setControlBusy(null)
+    }
+  }
+
   function reachableMergedPrinters(): Printer[] {
     if (!printers?.length) return []
     return applyPrinterLiveUpdates(printers, liveStatus).filter((p) =>
       isPrinterReachableForBulk(p, liveStatus),
     )
+  }
+
+  /** Printers with a Home Assistant power entity (mains toggle), regardless of Moonraker reachability. */
+  function haPowerLinkedPrinters(): Printer[] {
+    if (!printers?.length) return []
+    return applyPrinterLiveUpdates(printers, liveStatus).filter((p) => Boolean(p.ha_power_entity_id?.trim()))
   }
 
   async function runBulkHomeOnTargets(targets: Printer[]) {
@@ -316,6 +357,66 @@ export function FarmPage() {
     }
   }
 
+  async function runBulkHaPowerOnTargets(targets: Printer[]) {
+    setBulkActionsBusy(true)
+    try {
+      const results = await Promise.allSettled(
+        targets.map((p) =>
+          apiFetch<{ ok: boolean; message?: string | null }>(`/printers/${p.id}/power/on`, {
+            method: 'POST',
+          }),
+        ),
+      )
+      const fails: string[] = []
+      let ok = 0
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled') ok += 1
+        else {
+          const reason = r.reason instanceof Error ? r.reason.message : String(r.reason)
+          fails.push(`${targets[i].name}: ${reason}`)
+        }
+      })
+      if (fails.length === 0) {
+        setActionNotice(`Home Assistant turn_on sent for ${ok} printer(s).`)
+      } else {
+        setActionError(`Power on all: ${fails.length}/${targets.length} failed — ${fails.join(' · ')}`)
+        if (ok > 0) setActionNotice(`Power on succeeded for ${ok} printer(s); ${fails.length} failed.`)
+      }
+    } finally {
+      setBulkActionsBusy(false)
+    }
+  }
+
+  async function runBulkHaPowerOffTargets(targets: Printer[]) {
+    setBulkActionsBusy(true)
+    try {
+      const results = await Promise.allSettled(
+        targets.map((p) =>
+          apiFetch<{ ok: boolean; message?: string | null }>(`/printers/${p.id}/power/off`, {
+            method: 'POST',
+          }),
+        ),
+      )
+      const fails: string[] = []
+      let ok = 0
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled') ok += 1
+        else {
+          const reason = r.reason instanceof Error ? r.reason.message : String(r.reason)
+          fails.push(`${targets[i].name}: ${reason}`)
+        }
+      })
+      if (fails.length === 0) {
+        setActionNotice(`Home Assistant turn_off sent for ${ok} printer(s).`)
+      } else {
+        setActionError(`Power off all: ${fails.length}/${targets.length} failed — ${fails.join(' · ')}`)
+        if (ok > 0) setActionNotice(`Power off succeeded for ${ok} printer(s); ${fails.length} failed.`)
+      }
+    } finally {
+      setBulkActionsBusy(false)
+    }
+  }
+
   function requestBulkHome() {
     if (!canManagePrinters || useMocks) return
     const targets = reachableMergedPrinters()
@@ -357,6 +458,20 @@ export function FarmPage() {
     setBulkConfirm({ kind: 'cooldown', targets })
   }
 
+  function requestBulkHaPower(mode: 'on' | 'off') {
+    if (!canManagePrinters || useMocks) return
+    const targets = haPowerLinkedPrinters()
+    setActionError(null)
+    setActionNotice(null)
+    if (targets.length === 0) {
+      setActionError(
+        'No printers have a Home Assistant power entity configured (printer Edit → Link Home Assistant power…).',
+      )
+      return
+    }
+    setBulkConfirm(mode === 'on' ? { kind: 'ha_power_on', targets } : { kind: 'ha_power_off', targets })
+  }
+
   async function executeConfirmedBulkAction() {
     const pending = bulkConfirm
     if (!pending || !canManagePrinters || useMocks) {
@@ -370,8 +485,12 @@ export function FarmPage() {
         await runBulkHomeOnTargets(pending.targets)
       } else if (pending.kind === 'preheat') {
         await runBulkPreheatOnTargets(pending.targets, pending.preset)
-      } else {
+      } else if (pending.kind === 'cooldown') {
         await runBulkCooldownOnTargets(pending.targets)
+      } else if (pending.kind === 'ha_power_on') {
+        await runBulkHaPowerOnTargets(pending.targets)
+      } else {
+        await runBulkHaPowerOffTargets(pending.targets)
       }
     } finally {
       setBulkConfirm(null)
@@ -419,7 +538,7 @@ export function FarmPage() {
                   Farm-wide
                 </h2>
                 <span className="farm-bulk-panel-stat muted small" aria-live="polite">
-                  {reachableMergedPrinters().length} reachable
+                  {reachableMergedPrinters().length} reachable · {haPowerLinkedPrinters().length} HA power
                 </span>
               </div>
               <div className="farm-bulk-panel-actions" role="group" aria-label="Bulk Moonraker commands">
@@ -473,18 +592,56 @@ export function FarmPage() {
                     Preheat all
                   </button>
                 </div>
+                <div className="farm-bulk-actions-divider" aria-hidden />
+                <div className="farm-bulk-ha-power-row" role="group" aria-label="Hardware power via Home Assistant">
+                  <button
+                    type="button"
+                    className="btn sm secondary farm-bulk-ha-power-on-btn"
+                    disabled={
+                      bulkActionsBusy ||
+                      bulkConfirm !== null ||
+                      haPowerLinkedPrinters().length === 0
+                    }
+                    onClick={() => requestBulkHaPower('on')}
+                    title="Home Assistant turn_on on each printer’s linked entity"
+                  >
+                    Power on all
+                  </button>
+                  <button
+                    type="button"
+                    className="btn sm danger farm-bulk-ha-power-off-btn"
+                    disabled={
+                      bulkActionsBusy ||
+                      bulkConfirm !== null ||
+                      haPowerLinkedPrinters().length === 0
+                    }
+                    onClick={() => requestBulkHaPower('off')}
+                    title="Requires confirmation — turn_off mains-style entities"
+                  >
+                    Power off all
+                  </button>
+                </div>
               </div>
             </section>
           ) : null}
           <div className="page-head-toolbar-tail">
             {showFarmGrid && viewMode === 'advanced' && canManagePrinters ? (
-              <button
-                type="button"
-                className="btn sm ghost farm-preset-setup-btn"
-                onClick={() => setPreheatSettingsOpen(true)}
-              >
-                Preheat presets…
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="btn sm ghost farm-preset-setup-btn"
+                  onClick={() => setHaSettingsOpen(true)}
+                >
+                  Home Assistant…
+                </button>
+                <button
+                  type="button"
+                  className="btn sm ghost farm-preset-setup-btn"
+                  onClick={() => setPreheatSettingsOpen(true)}
+                >
+                  Preheat presets…
+                </button>
+              </>
             ) : null}
             {showFarmGrid ? (
               <FarmViewToggle mode={viewMode} onChange={onViewModeChange} />
@@ -550,6 +707,13 @@ export function FarmPage() {
                 }
                 setModal({ type: 'connection', mode: 'edit', printer: x })
               }}
+              onEditHaPower={(x) => {
+                if (isMockPrinter(x)) {
+                  setActionError('Mock printers are read-only.')
+                  return
+                }
+                setModal({ type: 'connection', mode: 'edit', printer: x, highlightHaPower: true })
+              }}
               onEditFilament={(x) => {
                 if (isMockPrinter(x)) {
                   setActionError('Mock printers are read-only.')
@@ -576,6 +740,7 @@ export function FarmPage() {
           open
           mode={modal.mode}
           printer={modal.printer}
+          highlightHaPower={modal.mode === 'edit' && Boolean(modal.highlightHaPower)}
           suggestedName={modal.mode === 'create' ? modal.suggestedName : undefined}
           onClose={() => setModal(null)}
           onSaved={() => void loadPrinters()}
@@ -609,6 +774,23 @@ export function FarmPage() {
           onSaved={(presets) => setPreheatPresets(presets)}
         />
       ) : null}
+
+      {canManagePrinters ? (
+        <HomeAssistantSettingsModal
+          open={haSettingsOpen}
+          onClose={() => setHaSettingsOpen(false)}
+        />
+      ) : null}
+
+      <HaPrinterPowerOffModal
+        printer={haPowerOffConfirmPrinter}
+        busy={controlBusy?.action === 'power_off'}
+        onClose={() => {
+          if (controlBusy?.action === 'power_off') return
+          setHaPowerOffConfirmPrinter(null)
+        }}
+        onConfirm={(p) => void executeConfirmedHaPrinterPowerOff(p)}
+      />
 
       <FarmBulkConfirmModal
         state={bulkConfirm}

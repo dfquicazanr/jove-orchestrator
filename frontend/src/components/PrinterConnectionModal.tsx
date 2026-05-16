@@ -1,5 +1,6 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { apiFetch } from '../api/client'
+import { HaEntityCombobox } from './HaEntityCombobox'
 import type { Printer } from '../types/printer'
 
 type Mode = 'create' | 'edit'
@@ -10,6 +11,8 @@ type Props = {
   printer: Printer | null
   /** Default display name when ``mode === 'create'`` (e.g. ``Printer 3``). */
   suggestedName?: string
+  /** When editing, scroll the HA power entity field into view (e.g. opened from printer menu). */
+  highlightHaPower?: boolean
   onClose: () => void
   onSaved: () => void
   onCreatedContinue?: (printer: Printer) => void
@@ -45,6 +48,7 @@ export function PrinterConnectionModal({
   mode,
   printer,
   suggestedName,
+  highlightHaPower = false,
   onClose,
   onSaved,
   onCreatedContinue,
@@ -56,6 +60,7 @@ export function PrinterConnectionModal({
   const [testBusy, setTestBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [testFeedback, setTestFeedback] = useState<{ ok: boolean; text: string } | null>(null)
+  const haPowerSectionRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -77,6 +82,18 @@ export function PrinterConnectionModal({
       })
     }
   }, [open, mode, printer, suggestedName])
+
+  useEffect(() => {
+    if (!open || !highlightHaPower || mode !== 'edit') return
+    const id = window.requestAnimationFrame(() => {
+      const el = haPowerSectionRef.current
+      if (!el) return
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      const inp = document.getElementById('conn-ha-power-entity') as HTMLInputElement | null
+      if (inp) inp.focus()
+    })
+    return () => window.cancelAnimationFrame(id)
+  }, [open, highlightHaPower, mode])
 
   if (!open) return null
 
@@ -169,7 +186,8 @@ export function PrinterConnectionModal({
     }
   }
 
-  const title = mode === 'create' ? 'Add printer' : 'Printer connection'
+  const title =
+    mode === 'create' ? 'Add printer' : highlightHaPower ? 'Home Assistant power' : 'Printer connection'
 
   return (
     <div
@@ -255,16 +273,27 @@ export function PrinterConnectionModal({
             </label>
           ) : null}
 
-          <label>
-            Home Assistant power entity (optional)
-            <input
-              value={form.ha_power_entity_id}
-              onChange={(e) => setForm((f) => ({ ...f, ha_power_entity_id: e.target.value }))}
-              maxLength={256}
-              placeholder="switch.printer_plug"
-              autoComplete="off"
-            />
-          </label>
+          <div ref={haPowerSectionRef} className="ha-connection-power-block">
+            <label>
+              Home Assistant on/off entity (optional)
+              <HaEntityCombobox
+                id="conn-ha-power-entity"
+                active={open}
+                value={form.ha_power_entity_id}
+                maxLength={256}
+                placeholder="switch.plug · light.outlet · input_boolean.relay"
+                disabled={busy}
+                onChange={(ha_power_entity_id) => setForm((f) => ({ ...f, ha_power_entity_id }))}
+              />
+            </label>
+            <p className="muted small">
+              Choices load automatically from Home Assistant (<code className="inline-code">switch</code>,{' '}
+              <code className="inline-code">light</code>, <code className="inline-code">input_boolean</code>,{' '}
+              <code className="inline-code">fan</code>) once this dialog opens. Jove calls{' '}
+              <code className="inline-code">turn_on</code> / <code className="inline-code">turn_off</code>. Set the HA URL
+              and token in Farm <strong>Controls</strong> → <strong>Home Assistant…</strong>
+            </p>
+          </div>
 
           {testFeedback ? (
             <p className={`test-hint ${testFeedback.ok ? 'ok' : 'warn'}`}>{testFeedback.text}</p>

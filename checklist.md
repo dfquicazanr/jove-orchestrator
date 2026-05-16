@@ -72,7 +72,8 @@ Work top-to-bottom within a section when possible. **Definition of done** for a 
 
 ## v1 — Home Assistant integration
 
-- [x] **HA client** — REST switch on/off via `HOME_ASSISTANT_*`.
+- [x] **HA client** — REST `turn_on`/`turn_off` by entity domain; URL/token from Postgres (Farm UI) first, then `HOME_ASSISTANT_*` env.
+- [x] **Farm HA settings UI** — `GET|PUT /settings/home-assistant`, optional `POST .../test`, Farm → Controls → **Home Assistant…** (singleton DB row).
 - [x] **Per-printer power mapping** — `ha_power_entity_id`.
 - [x] **Power API** — `POST /printers/{id}/power/on|off` (manager).
 - [x] **Power in Farm UI** — Advanced **Controls** view shows On/Off when entity is configured.

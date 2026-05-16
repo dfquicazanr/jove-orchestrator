@@ -59,7 +59,7 @@ The API container runs **`alembic upgrade head`** on start (see `backend/Dockerf
 - **`database_url`** — Postgres (Docker default in compose: `postgresql+psycopg://jove:jove@db:5432/jove`).
 - **`cors_origins`** — Comma-separated; must include the Vite origin in dev.
 - **`gcode_upload_dir`**, **`gcode_max_upload_mb`** — Library uploads.
-- **`home_assistant_base_url`**, **`home_assistant_token`** — Optional HA switches for `POST /printers/{id}/power/on|off`.
+- **`home_assistant_base_url`**, **`home_assistant_token`** — Optional HA env fallback for `POST /printers/{id}/power/on|off`. Credentials can instead be saved in Postgres via **Farm → Controls → Home Assistant…** (`/settings/home-assistant`).
 - **`moonraker_watch_enabled`** — If `True` (default), lifespan starts **`moonraker_watch`** (WebSocket → SSE). Set `False` only for debugging without watchers.
 
 Env vars use **lowercase with underscores** matching Settings fields (see Pydantic settings).

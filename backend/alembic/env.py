@@ -7,6 +7,7 @@ from app.config import get_settings
 from app.database import Base
 
 # Import models so metadata is populated
+from app.models.farm_home_assistant_setting import FarmHomeAssistantSetting  # noqa: F401
 from app.models.gcode_file import GCodeFile  # noqa: F401
 from app.models.print_queue import PrintQueueItem  # noqa: F401
 from app.models.printer import Printer  # noqa: F401

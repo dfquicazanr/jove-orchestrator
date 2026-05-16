@@ -417,7 +417,7 @@ async def power_on(
     if not p.ha_power_entity_id:
         raise HTTPException(status_code=400, detail="Printer has no ha_power_entity_id configured")
     try:
-        await ha_svc.turn_switch_on(p.ha_power_entity_id)
+        await ha_svc.turn_entity_on(p.ha_power_entity_id, db)
     except ha_svc.HomeAssistantError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
     return {"ok": True}
@@ -435,7 +435,7 @@ async def power_off(
     if not p.ha_power_entity_id:
         raise HTTPException(status_code=400, detail="Printer has no ha_power_entity_id configured")
     try:
-        await ha_svc.turn_switch_off(p.ha_power_entity_id)
+        await ha_svc.turn_entity_off(p.ha_power_entity_id, db)
     except ha_svc.HomeAssistantError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
     return {"ok": True}

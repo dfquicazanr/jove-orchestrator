@@ -10,6 +10,8 @@ export type FarmBulkConfirmState =
       preset: MaterialPreheatPreset
     }
   | { kind: 'cooldown'; targets: Printer[] }
+  | { kind: 'ha_power_on'; targets: Printer[] }
+  | { kind: 'ha_power_off'; targets: Printer[] }
 
 function formatPrinterList(names: string[], max = 8): string {
   if (names.length === 0) return '(none)'
@@ -25,7 +27,7 @@ type Props = {
   onClose: () => void
 }
 
-/** Confirm dialog before Farm-wide Moonraker commands (fat-thumb guardrail). */
+/** Confirm dialog before farm-wide Moonraker or Home Assistant power actions. */
 export function FarmBulkConfirmModal({ state, busy, onConfirm, onClose }: Props) {
   useEffect(() => {
     if (!state || busy) return
@@ -76,7 +78,7 @@ export function FarmBulkConfirmModal({ state, busy, onConfirm, onClose }: Props)
     )
     confirmLabel = 'Preheat all'
     confirmClassName = 'btn primary'
-  } else {
+  } else if (state.kind === 'cooldown') {
     title = 'Cooldown all reachable printers?'
     body = (
       <>
@@ -92,6 +94,39 @@ export function FarmBulkConfirmModal({ state, busy, onConfirm, onClose }: Props)
     )
     confirmLabel = 'Cooldown all'
     confirmClassName = 'btn danger'
+  } else if (state.kind === 'ha_power_on') {
+    title = 'Turn on hardware power (Home Assistant)?'
+    body = (
+      <>
+        <p>
+          This sends Home Assistant <code className="inline-code">turn_on</code> for each printer&apos;s linked
+          entity on <strong>{n}</strong> printer{n === 1 ? '' : 's'}:
+        </p>
+        <p className="farm-bulk-confirm-names">{formatPrinterList(names)}</p>
+        <p className="muted small">
+          Printers without a HA power entity are excluded. Requires Farm → Home Assistant… credentials.
+        </p>
+      </>
+    )
+    confirmLabel = 'Power on all'
+    confirmClassName = 'btn primary'
+  } else if (state.kind === 'ha_power_off') {
+    title = 'Turn OFF hardware power (Home Assistant)?'
+    body = (
+      <>
+        <p>
+          This sends Home Assistant <code className="inline-code">turn_off</code> for mains-style entities on{' '}
+          <strong>{n}</strong> printer{n === 1 ? '' : 's'} — listed below:
+        </p>
+        <p className="farm-bulk-confirm-names">{formatPrinterList(names)}</p>
+        <p className="muted small">
+          Hosts may lose power abruptly (plugs, relays, smart switches). Ensure it is intentional for every
+          device.
+        </p>
+      </>
+    )
+    confirmLabel = 'Power off all'
+    confirmClassName = 'btn danger'
   }
 
   const dialogId =
@@ -99,7 +134,13 @@ export function FarmBulkConfirmModal({ state, busy, onConfirm, onClose }: Props)
       ? 'farm-bulk-confirm-home'
       : state.kind === 'preheat'
         ? 'farm-bulk-confirm-preheat'
-        : 'farm-bulk-confirm-cooldown'
+        : state.kind === 'cooldown'
+          ? 'farm-bulk-confirm-cooldown'
+          : state.kind === 'ha_power_on'
+            ? 'farm-bulk-confirm-ha-power-on'
+            : state.kind === 'ha_power_off'
+              ? 'farm-bulk-confirm-ha-power-off'
+              : 'farm-bulk-confirm-unknown'
 
   return (
     <div

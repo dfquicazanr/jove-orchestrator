@@ -517,6 +517,30 @@ dd {
   min-width: 0;
 }
 
+.farm-bulk-actions-divider {
+  flex-basis: 100%;
+  width: 100%;
+  height: 0;
+  margin: 0.05rem 0 0;
+  border: 0;
+  border-top: 1px solid rgba(138, 180, 255, 0.12);
+}
+
+.farm-bulk-ha-power-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.farm-bulk-ha-power-off-btn {
+  flex-shrink: 0;
+}
+
+.farm-bulk-ha-power-on-btn {
+  flex-shrink: 0;
+}
+
 .farm-bulk-select {
   flex: 1 1 6rem;
   min-width: 5rem;
@@ -582,6 +606,32 @@ dd {
   gap: 0.5rem;
   padding: 0.65rem 1rem 1rem;
   border-top: 1px solid #243044;
+}
+
+.ha-settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.ha-settings-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.ha-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ha-settings-actions-end {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-left: auto;
 }
 
 .modal.modal-wide {
@@ -1040,6 +1090,119 @@ dd {
 
 .printer-card-meta dd {
   min-width: 0;
+}
+
+.printer-ha-power-bar {
+  margin-top: 0.65rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid #2a3f5c;
+  background: rgba(24, 36, 52, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.printer-ha-power-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #aabbcf;
+  letter-spacing: 0.02em;
+}
+
+.printer-ha-power-actions {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.printer-card-inline-feedback {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+}
+
+.ha-connection-power-block {
+  margin-top: 0.35rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #243044;
+}
+
+.ha-entity-combobox {
+  position: relative;
+  margin-top: 0.06rem;
+  width: 100%;
+}
+
+.ha-entity-combobox-input-row {
+  display: flex;
+  gap: 0.35rem;
+  align-items: stretch;
+  width: 100%;
+}
+
+.ha-entity-combobox-input-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ha-entity-combobox-toggle {
+  flex-shrink: 0;
+  min-width: 2.35rem;
+  padding-inline: 0.4rem !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.ha-entity-combobox-dropdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 5;
+  max-height: 14rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.25rem 0;
+  list-style: none;
+  border-radius: 10px;
+  border: 1px solid #2f425c;
+  background: #151d2a;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+.ha-entity-combobox-option-li {
+  margin: 0;
+  padding: 0;
+}
+
+.ha-entity-combobox-option {
+  padding: 0.35rem 0.65rem;
+  cursor: pointer;
+  font-size: 0.88rem;
+  color: #dce6f7;
+}
+
+.ha-entity-combobox-option code {
+  font-size: 0.86rem;
+  color: #b8cbf0;
+}
+
+.ha-entity-combobox-option:hover,
+.ha-entity-combobox-option.highlighted {
+  background: rgba(138, 180, 255, 0.1);
+}
+
+.ha-entity-combobox-hint {
+  padding: 0.35rem 0.65rem;
+  margin: 0;
+  font-size: 0.82rem;
+  color: #8fa3bd;
+  list-style: none;
+}
+
+.ha-entity-combobox-warn {
+  color: #e8aa7f;
 }
 
 .btn {

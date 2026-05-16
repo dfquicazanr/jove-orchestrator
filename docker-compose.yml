@@ -23,6 +23,8 @@ services:
       DATABASE_URL: postgresql+psycopg://jove:jove@db:5432/jove
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      HOME_ASSISTANT_BASE_URL: ${HOME_ASSISTANT_BASE_URL:-}
+      HOME_ASSISTANT_TOKEN: ${HOME_ASSISTANT_TOKEN:-}
       GCODE_UPLOAD_DIR: /app/data/uploads
       INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-admin}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-change-me-on-first-login}

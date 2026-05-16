@@ -22,6 +22,8 @@ type Props = {
   controlFeedback?: { kind: 'ok' | 'err'; text: string } | null
   onControlAction?: (p: Printer, action: PrinterControlAction) => void
   onEditConnection: (p: Printer) => void
+  /** Open connection modal focused on the Home Assistant on/off entity field. */
+  onEditHaPower?: (p: Printer) => void
   onEditFilament: (p: Printer) => void
   onSendGcode: (p: Printer) => void
   onSync: (p: Printer) => void | Promise<void>
@@ -40,6 +42,7 @@ export function PrinterFarmCard({
   controlFeedback = null,
   onControlAction,
   onEditConnection,
+  onEditHaPower,
   onEditFilament,
   onSendGcode,
   onSync,
@@ -141,6 +144,19 @@ export function PrinterFarmCard({
                     >
                       Connection…
                     </button>
+                    {onEditHaPower ? (
+                      <button
+                        type="button"
+                        className="printer-menu-item"
+                        role="menuitem"
+                        onClick={() => {
+                          onEditHaPower(p)
+                          closeMenu()
+                        }}
+                      >
+                        Link Home Assistant power…
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="printer-menu-item"
@@ -275,21 +291,45 @@ export function PrinterFarmCard({
         </dl>
       ) : null}
 
+      {viewMode !== 'advanced' && isManager && p.ha_power_entity_id?.trim() && onControlAction ? (
+        <div className="printer-ha-power-bar">
+          <span className="printer-ha-power-label">Hardware power</span>
+          <div className="printer-ha-power-actions">
+            <button
+              type="button"
+              className="btn sm secondary"
+              disabled={Boolean(controlsDisabled) || controlBusyAction !== null}
+              title="Home Assistant turn_on on the linked entity"
+              onClick={() => onControlAction(p, 'power_on')}
+            >
+              {controlBusyAction === 'power_on' ? '…' : 'On'}
+            </button>
+            <button
+              type="button"
+              className="btn sm danger"
+              disabled={Boolean(controlsDisabled) || controlBusyAction !== null}
+              title="Requires confirmation — HA turn_off on the linked entity"
+              onClick={() => onControlAction(p, 'power_off')}
+            >
+              {controlBusyAction === 'power_off' ? '…' : 'Off'}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {viewMode === 'advanced' ? (
-        <>
-          <PrinterFarmAdvancedPanel
-            printer={p}
-            preheatPresets={preheatPresets}
-            disabled={controlsDisabled}
-            busyAction={controlBusyAction}
-            onAction={(action) => onControlAction?.(p, action)}
-          />
-          {controlFeedback ? (
-            <p className={controlFeedback.kind === 'ok' ? 'success subtle' : 'error subtle'}>
-              {controlFeedback.text}
-            </p>
-          ) : null}
-        </>
+        <PrinterFarmAdvancedPanel
+          printer={p}
+          preheatPresets={preheatPresets}
+          disabled={controlsDisabled}
+          busyAction={controlBusyAction}
+          onAction={(action) => onControlAction?.(p, action)}
+        />
+      ) : null}
+      {controlFeedback ? (
+        <p className={controlFeedback.kind === 'ok' ? 'success subtle printer-card-inline-feedback' : 'error subtle printer-card-inline-feedback'}>
+          {controlFeedback.text}
+        </p>
       ) : null}
     </article>
   )
