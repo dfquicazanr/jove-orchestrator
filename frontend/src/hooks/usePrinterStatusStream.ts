@@ -7,6 +7,10 @@ export type PrinterLiveUpdate = {
   last_known_status: string
   last_moonraker_error: string | null
   connected: boolean
+  extruder_actual_c: number | null
+  extruder_target_c: number | null
+  bed_actual_c: number | null
+  bed_target_c: number | null
 }
 
 /**
@@ -33,7 +37,16 @@ export function usePrinterStatusStream(enabled: boolean): Map<number, PrinterLiv
         if (typeof u.printer_id !== 'number') return
         setLive((prev) => {
           const next = new Map(prev)
-          next.set(u.printer_id, u)
+          next.set(u.printer_id, {
+            printer_id: u.printer_id,
+            last_known_status: u.last_known_status,
+            last_moonraker_error: u.last_moonraker_error,
+            connected: u.connected,
+            extruder_actual_c: u.extruder_actual_c ?? null,
+            extruder_target_c: u.extruder_target_c ?? null,
+            bed_actual_c: u.bed_actual_c ?? null,
+            bed_target_c: u.bed_target_c ?? null,
+          })
           return next
         })
       } catch {

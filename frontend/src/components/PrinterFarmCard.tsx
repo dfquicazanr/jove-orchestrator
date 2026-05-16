@@ -6,6 +6,7 @@ import type { MaterialPreheatPreset } from '../types/materialPreheat'
 import { PrinterLastErrorHint } from './PrinterLastErrorHint'
 import type { FarmViewMode } from '../lib/farmViewMode'
 import { printerStatusLabel } from '../lib/printerStatusLabels'
+import { printerHasRenderableTemps, formatHeaterActualTarget } from '../lib/formatPrinterTemps'
 import type { Printer } from '../types/printer'
 
 type Props = {
@@ -84,6 +85,9 @@ export function PrinterFarmCard({
 
   const materialLine = [p.loaded_material.trim() || null, p.loaded_color.trim() || null].filter(Boolean).join(' · ')
   const statusClass = p.last_known_status
+  const showTempStrip =
+    moonrakerLive ||
+    printerHasRenderableTemps(p)
 
   return (
     <article className="card printer-card">
@@ -236,6 +240,21 @@ export function PrinterFarmCard({
           <span className="filament-zone-weight">{p.remaining_filament_grams.toFixed(0)} g remaining</span>
         </div>
       </div>
+
+      {showTempStrip ? (
+        <dl className="printer-card-temps">
+          <dt>Hotend</dt>
+          <dd className="printer-card-temp-dd">
+            {formatHeaterActualTarget(p.extruder_actual_c, p.extruder_target_c)}
+            <span className="printer-card-temp-unit">°C</span>
+          </dd>
+          <dt>Bed</dt>
+          <dd className="printer-card-temp-dd">
+            {formatHeaterActualTarget(p.bed_actual_c, p.bed_target_c)}
+            <span className="printer-card-temp-unit">°C</span>
+          </dd>
+        </dl>
+      ) : null}
 
       {p.ha_power_entity_id || (p.last_moonraker_error && statusClass !== 'error') ? (
         <dl className="printer-card-meta">

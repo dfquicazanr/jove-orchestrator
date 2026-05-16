@@ -18,6 +18,7 @@ from app.models.printer import Printer, PrinterStatus
 from app.services.moonraker import (
     apply_ping_to_printer,
     derive_printer_status_from_status,
+    extract_live_heater_temperatures,
     extract_webhooks_summary_from_object_status,
     merge_printer_status_objects,
     moonraker_error_from_status,
@@ -28,7 +29,12 @@ from app.services.moonraker_url import format_moonraker_connection_error
 
 log = logging.getLogger(__name__)
 
-SUBSCRIBE_OBJECTS = {"print_stats": None, "webhooks": None}
+SUBSCRIBE_OBJECTS = {
+    "print_stats": None,
+    "webhooks": None,
+    "extruder": None,
+    "heater_bed": None,
+}
 RELOAD_PRINTERS_SEC = 30.0
 RECONNECT_BASE_SEC = 2.0
 RECONNECT_MAX_SEC = 60.0
@@ -41,6 +47,10 @@ class PrinterLiveUpdate:
     last_known_status: str
     last_moonraker_error: str | None
     connected: bool
+    extruder_actual_c: float | None = None
+    extruder_target_c: float | None = None
+    bed_actual_c: float | None = None
+    bed_target_c: float | None = None
     moonraker_ws_connected: bool = False
     last_ws_status: str | None = None
     last_ws_at: str | None = None
@@ -52,13 +62,17 @@ class PrinterLiveUpdate:
     klipper_state_message: str | None = None
 
     def to_json(self) -> str:
-        # Keep SSE payload minimal; internal fields remain for watchers / merges.
+        # Keep SSE payload small; heaters only update over the Moonraker WebSocket merge path.
         return json.dumps(
             {
                 "printer_id": self.printer_id,
                 "last_known_status": self.last_known_status,
                 "last_moonraker_error": self.last_moonraker_error,
                 "connected": self.connected,
+                "extruder_actual_c": self.extruder_actual_c,
+                "extruder_target_c": self.extruder_target_c,
+                "bed_actual_c": self.bed_actual_c,
+                "bed_target_c": self.bed_target_c,
             }
         )
 
@@ -376,6 +390,7 @@ class MoonrakerWatchService:
         if derived not in (PrinterStatus.error.value, PrinterStatus.offline.value):
             err = None
         wh_st, wh_msg = extract_webhooks_summary_from_object_status(status)
+        heater_temps = extract_live_heater_temperatures(status)
         await self._publish(
             printer_id,
             derived,
@@ -384,6 +399,7 @@ class MoonrakerWatchService:
             transport="websocket",
             klipper_webhooks_state=wh_st,
             klipper_state_message=wh_msg,
+            ws_heater_temps=heater_temps,
         )
 
     async def _publish(
@@ -398,6 +414,7 @@ class MoonrakerWatchService:
         klipper_webhooks_state: str | None = None,
         klipper_state_message: str | None = None,
         http_klipper_snapshot: tuple[str | None, str | None] | None = None,
+        ws_heater_temps: tuple[float | None, float | None, float | None, float | None] | None = None,
     ) -> None:
         now_iso = datetime.now(timezone.utc).isoformat()
         http_interval = get_settings().moonraker_http_liveness_interval_sec
@@ -471,11 +488,28 @@ class MoonrakerWatchService:
                 k_ws = prev.klipper_webhooks_state if prev else None
                 k_msg = prev.klipper_state_message if prev else None
 
+            if moonraker_ws_connected and connected:
+                if ws_heater_temps is not None:
+                    ex_a, ex_t, bd_a, bd_t = ws_heater_temps
+                elif prev:
+                    ex_a = prev.extruder_actual_c
+                    ex_t = prev.extruder_target_c
+                    bd_a = prev.bed_actual_c
+                    bd_t = prev.bed_target_c
+                else:
+                    ex_a = ex_t = bd_a = bd_t = None
+            else:
+                ex_a = ex_t = bd_a = bd_t = None
+
             update = PrinterLiveUpdate(
                 printer_id=printer_id,
                 last_known_status=status,
                 last_moonraker_error=error,
                 connected=connected,
+                extruder_actual_c=ex_a,
+                extruder_target_c=ex_t,
+                bed_actual_c=bd_a,
+                bed_target_c=bd_t,
                 moonraker_ws_connected=moonraker_ws_connected,
                 last_ws_status=last_ws_status,
                 last_ws_at=last_ws_at,
@@ -501,6 +535,10 @@ class MoonrakerWatchService:
                 or prev.http_liveness_interval_sec != update.http_liveness_interval_sec
                 or prev.klipper_webhooks_state != update.klipper_webhooks_state
                 or prev.klipper_state_message != update.klipper_state_message
+                or prev.extruder_actual_c != update.extruder_actual_c
+                or prev.extruder_target_c != update.extruder_target_c
+                or prev.bed_actual_c != update.bed_actual_c
+                or prev.bed_target_c != update.bed_target_c
             )
         if changed:
             payload = update.to_json()

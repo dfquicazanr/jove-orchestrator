@@ -83,6 +83,42 @@ def derive_printer_status_from_moonraker(data: Any) -> str | None:
     return derive_printer_status_from_status(status)
 
 
+def _coerce_optional_float(val: Any) -> float | None:
+    if val is None:
+        return None
+    try:
+        return round(float(val), 3)
+    except (TypeError, ValueError):
+        return None
+
+
+def extract_live_heater_temperatures(
+    status: dict[str, Any],
+) -> tuple[float | None, float | None, float | None, float | None]:
+    """Current/target °C from Klipper objects ``extruder`` / ``extruder0`` and ``heater_bed``.
+
+    Returned as ``(extruder_actual, extruder_target, bed_actual, bed_target)``.
+    """
+    extruder_actual: float | None = None
+    extruder_target: float | None = None
+    for key in ("extruder", "extruder0"):
+        node = status.get(key)
+        if isinstance(node, dict):
+            ta = _coerce_optional_float(node.get("temperature"))
+            tt = _coerce_optional_float(node.get("target"))
+            if ta is not None or tt is not None:
+                extruder_actual, extruder_target = ta, tt
+                break
+
+    bed_actual = bed_target = None
+    bed_node = status.get("heater_bed")
+    if isinstance(bed_node, dict):
+        bed_actual = _coerce_optional_float(bed_node.get("temperature"))
+        bed_target = _coerce_optional_float(bed_node.get("target"))
+
+    return (extruder_actual, extruder_target, bed_actual, bed_target)
+
+
 def merge_printer_status_objects(
     accumulated: dict[str, Any], delta: dict[str, Any]
 ) -> dict[str, Any]:

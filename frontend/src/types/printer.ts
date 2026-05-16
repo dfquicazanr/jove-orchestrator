@@ -12,4 +12,9 @@ export type Printer = {
   last_moonraker_error: string | null
   created_at: string
   updated_at: string
+  /** From live Moonraker object state (SSE); omit on API-only payloads. */
+  extruder_actual_c?: number | null
+  extruder_target_c?: number | null
+  bed_actual_c?: number | null
+  bed_target_c?: number | null
 }

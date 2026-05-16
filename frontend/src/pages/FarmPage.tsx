@@ -7,6 +7,7 @@ import { PrinterConnectionModal } from '../components/PrinterConnectionModal'
 import { PrinterFilamentModal } from '../components/PrinterFilamentModal'
 import { MaterialPreheatSettingsModal } from '../components/MaterialPreheatSettingsModal'
 import { PrinterFarmCard } from '../components/PrinterFarmCard'
+import { FarmBulkConfirmModal, type FarmBulkConfirmState } from '../components/FarmBulkConfirmModal'
 import { SendGcodeModal } from '../components/SendGcodeModal'
 import { usePrinterStatusStream, type PrinterLiveUpdate } from '../hooks/usePrinterStatusStream'
 import { applyPrinterLiveUpdates } from '../lib/mergePrinterLive'
@@ -59,6 +60,7 @@ export function FarmPage() {
   const [preheatSettingsOpen, setPreheatSettingsOpen] = useState(false)
   const [bulkActionsBusy, setBulkActionsBusy] = useState(false)
   const [bulkPreheatPresetId, setBulkPreheatPresetId] = useState('')
+  const [bulkConfirm, setBulkConfirm] = useState<FarmBulkConfirmState | null>(null)
   const useMocks = mockPrintersMode()
   const liveStatus = usePrinterStatusStream(!useMocks)
 
@@ -222,15 +224,7 @@ export function FarmPage() {
     )
   }
 
-  async function bulkHomeConnected() {
-    if (!canManagePrinters || useMocks) return
-    const targets = reachableMergedPrinters()
-    setActionError(null)
-    setActionNotice(null)
-    if (targets.length === 0) {
-      setActionError('No reachable printers to home (all offline or not connected).')
-      return
-    }
+  async function runBulkHomeOnTargets(targets: Printer[]) {
     setBulkActionsBusy(true)
     try {
       const results = await Promise.allSettled(
@@ -261,20 +255,7 @@ export function FarmPage() {
     }
   }
 
-  async function bulkPreheatConnected() {
-    if (!canManagePrinters || useMocks) return
-    const preset = preheatPresets.find((x) => String(x.id) === bulkPreheatPresetId)
-    if (!preset) {
-      setActionError('Choose a preheat preset (configure under Preheat presets…).')
-      return
-    }
-    const targets = reachableMergedPrinters()
-    setActionError(null)
-    setActionNotice(null)
-    if (targets.length === 0) {
-      setActionError('No reachable printers to preheat (all offline or not connected).')
-      return
-    }
+  async function runBulkPreheatOnTargets(targets: Printer[], preset: MaterialPreheatPreset) {
     setBulkActionsBusy(true)
     try {
       const results = await Promise.allSettled(
@@ -302,6 +283,98 @@ export function FarmPage() {
       }
     } finally {
       setBulkActionsBusy(false)
+    }
+  }
+
+  async function runBulkCooldownOnTargets(targets: Printer[]) {
+    setBulkActionsBusy(true)
+    try {
+      const results = await Promise.allSettled(
+        targets.map((p) =>
+          apiFetch<{ ok: boolean; message?: string | null }>(`/printers/${p.id}/control/cooldown`, {
+            method: 'POST',
+          }),
+        ),
+      )
+      const fails: string[] = []
+      let ok = 0
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled') ok += 1
+        else {
+          const reason = r.reason instanceof Error ? r.reason.message : String(r.reason)
+          fails.push(`${targets[i].name}: ${reason}`)
+        }
+      })
+      if (fails.length === 0) {
+        setActionNotice(`Cooldown (M104 S0 · M140 S0) sent to ${ok} printer(s).`)
+      } else {
+        setActionError(`Cooldown all: ${fails.length}/${targets.length} failed — ${fails.join(' · ')}`)
+        if (ok > 0) setActionNotice(`Cooldown sent to ${ok} printer(s); ${fails.length} failed.`)
+      }
+    } finally {
+      setBulkActionsBusy(false)
+    }
+  }
+
+  function requestBulkHome() {
+    if (!canManagePrinters || useMocks) return
+    const targets = reachableMergedPrinters()
+    setActionError(null)
+    setActionNotice(null)
+    if (targets.length === 0) {
+      setActionError('No reachable printers to home (all offline or not connected).')
+      return
+    }
+    setBulkConfirm({ kind: 'home', targets })
+  }
+
+  function requestBulkPreheat() {
+    if (!canManagePrinters || useMocks) return
+    const preset = preheatPresets.find((x) => String(x.id) === bulkPreheatPresetId)
+    if (!preset) {
+      setActionError('Choose a preheat preset (configure under Preheat presets…).')
+      return
+    }
+    const targets = reachableMergedPrinters()
+    setActionError(null)
+    setActionNotice(null)
+    if (targets.length === 0) {
+      setActionError('No reachable printers to preheat (all offline or not connected).')
+      return
+    }
+    setBulkConfirm({ kind: 'preheat', targets, preset })
+  }
+
+  function requestBulkCooldown() {
+    if (!canManagePrinters || useMocks) return
+    const targets = reachableMergedPrinters()
+    setActionError(null)
+    setActionNotice(null)
+    if (targets.length === 0) {
+      setActionError('No reachable printers to cooldown (all offline or not connected).')
+      return
+    }
+    setBulkConfirm({ kind: 'cooldown', targets })
+  }
+
+  async function executeConfirmedBulkAction() {
+    const pending = bulkConfirm
+    if (!pending || !canManagePrinters || useMocks) {
+      setBulkConfirm(null)
+      return
+    }
+    setActionError(null)
+    setActionNotice(null)
+    try {
+      if (pending.kind === 'home') {
+        await runBulkHomeOnTargets(pending.targets)
+      } else if (pending.kind === 'preheat') {
+        await runBulkPreheatOnTargets(pending.targets, pending.preset)
+      } else {
+        await runBulkCooldownOnTargets(pending.targets)
+      }
+    } finally {
+      setBulkConfirm(null)
     }
   }
 
@@ -353,11 +426,20 @@ export function FarmPage() {
                 <button
                   type="button"
                   className="btn sm secondary farm-bulk-home-btn"
-                  disabled={bulkActionsBusy}
-                  onClick={() => void bulkHomeConnected()}
+                  disabled={bulkActionsBusy || bulkConfirm !== null}
+                  onClick={requestBulkHome}
                   title="G28 — run on each reachable printer"
                 >
                   Home all
+                </button>
+                <button
+                  type="button"
+                  className="btn sm secondary farm-bulk-cooldown-btn"
+                  disabled={bulkActionsBusy || bulkConfirm !== null}
+                  onClick={requestBulkCooldown}
+                  title="M104 S0 and M140 S0 on each reachable printer"
+                >
+                  Cooldown all
                 </button>
                 <div className="farm-bulk-preheat-row">
                   <label className="sr-only" htmlFor="farm-bulk-preset">
@@ -367,7 +449,7 @@ export function FarmPage() {
                     id="farm-bulk-preset"
                     className="farm-bulk-select"
                     aria-label="Material preset"
-                    disabled={bulkActionsBusy || preheatPresets.length === 0}
+                    disabled={(bulkActionsBusy || bulkConfirm !== null) || preheatPresets.length === 0}
                     value={bulkPreheatPresetId}
                     onChange={(e) => setBulkPreheatPresetId(e.target.value)}
                   >
@@ -381,9 +463,12 @@ export function FarmPage() {
                     type="button"
                     className="btn sm primary farm-bulk-preheat-btn"
                     disabled={
-                      bulkActionsBusy || preheatPresets.length === 0 || bulkPreheatPresetId === ''
+                      bulkActionsBusy ||
+                      bulkConfirm !== null ||
+                      preheatPresets.length === 0 ||
+                      bulkPreheatPresetId === ''
                     }
-                    onClick={() => void bulkPreheatConnected()}
+                    onClick={requestBulkPreheat}
                   >
                     Preheat all
                   </button>
@@ -524,6 +609,15 @@ export function FarmPage() {
           onSaved={(presets) => setPreheatPresets(presets)}
         />
       ) : null}
+
+      <FarmBulkConfirmModal
+        state={bulkConfirm}
+        busy={bulkActionsBusy}
+        onClose={() => {
+          if (!bulkActionsBusy) setBulkConfirm(null)
+        }}
+        onConfirm={() => void executeConfirmedBulkAction()}
+      />
     </div>
   )
 }

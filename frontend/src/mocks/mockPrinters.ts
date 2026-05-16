@@ -22,9 +22,13 @@ function row(
     ha_power_entity_id?: string | null
     last_moonraker_check_at?: string | null
     last_moonraker_error?: string | null
+    extruder_actual_c?: number | null
+    extruder_target_c?: number | null
+    bed_actual_c?: number | null
+    bed_target_c?: number | null
   },
 ): Printer {
-  return {
+  const base = {
     id,
     name: o.name,
     moonraker_base_url: o.moonraker_base_url,
@@ -39,6 +43,15 @@ function row(
     created_at: T,
     updated_at: T,
   }
+  type TempKey = 'extruder_actual_c' | 'extruder_target_c' | 'bed_actual_c' | 'bed_target_c'
+  const temps: Partial<Pick<Printer, TempKey>> = {}
+  for (const key of ['extruder_actual_c', 'extruder_target_c', 'bed_actual_c', 'bed_target_c'] as const) {
+    const v = o[key]
+    if (typeof v === 'number' && !Number.isNaN(v)) {
+      temps[key] = v
+    }
+  }
+  return { ...base, ...temps }
 }
 
 /** One card per ``PrinterStatus`` value from the backend, plus an extra ready row for full spiral. */
@@ -50,6 +63,10 @@ export const MOCK_PRINTERS: Printer[] = [
     loaded_color: 'matte white',
     remaining_filament_grams: 1000,
     last_known_status: 'ready',
+    extruder_actual_c: 24.5,
+    extruder_target_c: 0,
+    bed_actual_c: 59.2,
+    bed_target_c: 0,
   }),
   row(-2, {
     name: 'Mock · Offline',
@@ -74,6 +91,10 @@ export const MOCK_PRINTERS: Printer[] = [
     loaded_color: 'red',
     remaining_filament_grams: 540,
     last_known_status: 'printing',
+    extruder_actual_c: 217.8,
+    extruder_target_c: 220,
+    bed_actual_c: 74.5,
+    bed_target_c: 75,
   }),
   row(-5, {
     name: 'Mock · Print finished',
