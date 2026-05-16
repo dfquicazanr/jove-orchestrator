@@ -8,7 +8,7 @@ import { PrinterFilamentModal } from '../components/PrinterFilamentModal'
 import { MaterialPreheatSettingsModal } from '../components/MaterialPreheatSettingsModal'
 import { PrinterFarmCard } from '../components/PrinterFarmCard'
 import { SendGcodeModal } from '../components/SendGcodeModal'
-import { usePrinterStatusStream } from '../hooks/usePrinterStatusStream'
+import { usePrinterStatusStream, type PrinterLiveUpdate } from '../hooks/usePrinterStatusStream'
 import { applyPrinterLiveUpdates } from '../lib/mergePrinterLive'
 import { loadFarmViewMode, saveFarmViewMode, type FarmViewMode } from '../lib/farmViewMode'
 import { mockPrintersMode } from '../lib/mockPrintersMode'
@@ -18,6 +18,15 @@ import { MOCK_PRINTERS, isMockPrinter } from '../mocks/mockPrinters'
 import type { MaterialPreheatPreset } from '../types/materialPreheat'
 import { MOCK_PREHEAT_PRESETS } from '../types/materialPreheat'
 import type { Printer } from '../types/printer'
+
+/** Moonraker looks reachable: live stream says connected, or no live row and status is not clearly down. */
+function isPrinterReachableForBulk(p: Printer, live: Map<number, PrinterLiveUpdate>): boolean {
+  const u = live.get(p.id)
+  if (u?.connected === true) return true
+  if (u?.connected === false) return false
+  const s = p.last_known_status
+  return s !== 'offline' && s !== 'powered_off'
+}
 
 type ConnectionModal = {
   type: 'connection'
@@ -48,6 +57,8 @@ export function FarmPage() {
   const [controlBusy, setControlBusy] = useState<ControlBusy | null>(null)
   const [preheatPresets, setPreheatPresets] = useState<MaterialPreheatPreset[]>([])
   const [preheatSettingsOpen, setPreheatSettingsOpen] = useState(false)
+  const [bulkActionsBusy, setBulkActionsBusy] = useState(false)
+  const [bulkPreheatPresetId, setBulkPreheatPresetId] = useState('')
   const useMocks = mockPrintersMode()
   const liveStatus = usePrinterStatusStream(!useMocks)
 
@@ -89,6 +100,17 @@ export function FarmPage() {
   useEffect(() => {
     void loadPreheatPresets()
   }, [loadPreheatPresets])
+
+  useEffect(() => {
+    if (preheatPresets.length === 0) {
+      setBulkPreheatPresetId('')
+      return
+    }
+    setBulkPreheatPresetId((prev) => {
+      if (prev && preheatPresets.some((x) => String(x.id) === prev)) return prev
+      return String(preheatPresets[0].id)
+    })
+  }, [preheatPresets])
 
   function onViewModeChange(mode: FarmViewMode) {
     setViewMode(mode)
@@ -193,6 +215,96 @@ export function FarmPage() {
     }
   }
 
+  function reachableMergedPrinters(): Printer[] {
+    if (!printers?.length) return []
+    return applyPrinterLiveUpdates(printers, liveStatus).filter((p) =>
+      isPrinterReachableForBulk(p, liveStatus),
+    )
+  }
+
+  async function bulkHomeConnected() {
+    if (!canManagePrinters || useMocks) return
+    const targets = reachableMergedPrinters()
+    setActionError(null)
+    setActionNotice(null)
+    if (targets.length === 0) {
+      setActionError('No reachable printers to home (all offline or not connected).')
+      return
+    }
+    setBulkActionsBusy(true)
+    try {
+      const results = await Promise.allSettled(
+        targets.map((p) =>
+          apiFetch<{ ok: boolean; message?: string | null }>(`/printers/${p.id}/control/home`, {
+            method: 'POST',
+            json: { axes: 'all' },
+          }),
+        ),
+      )
+      const fails: string[] = []
+      let ok = 0
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled') ok += 1
+        else {
+          const reason = r.reason instanceof Error ? r.reason.message : String(r.reason)
+          fails.push(`${targets[i].name}: ${reason}`)
+        }
+      })
+      if (fails.length === 0) {
+        setActionNotice(`Homing started on ${ok} printer(s).`)
+      } else {
+        setActionError(`Home all: ${fails.length}/${targets.length} failed — ${fails.join(' · ')}`)
+        if (ok > 0) setActionNotice(`Homing started on ${ok} printer(s); ${fails.length} failed.`)
+      }
+    } finally {
+      setBulkActionsBusy(false)
+    }
+  }
+
+  async function bulkPreheatConnected() {
+    if (!canManagePrinters || useMocks) return
+    const preset = preheatPresets.find((x) => String(x.id) === bulkPreheatPresetId)
+    if (!preset) {
+      setActionError('Choose a preheat preset (configure under Preheat presets…).')
+      return
+    }
+    const targets = reachableMergedPrinters()
+    setActionError(null)
+    setActionNotice(null)
+    if (targets.length === 0) {
+      setActionError('No reachable printers to preheat (all offline or not connected).')
+      return
+    }
+    setBulkActionsBusy(true)
+    try {
+      const results = await Promise.allSettled(
+        targets.map((p) =>
+          apiFetch<{ ok: boolean; message?: string | null }>(`/printers/${p.id}/control/preheat`, {
+            method: 'POST',
+            json: { hotend_c: preset.hotend_c, bed_c: preset.bed_c },
+          }),
+        ),
+      )
+      const fails: string[] = []
+      let ok = 0
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled') ok += 1
+        else {
+          const reason = r.reason instanceof Error ? r.reason.message : String(r.reason)
+          fails.push(`${targets[i].name}: ${reason}`)
+        }
+      })
+      if (fails.length === 0) {
+        setActionNotice(`Preheat (${preset.name}) sent to ${ok} printer(s).`)
+      } else {
+        setActionError(`Preheat all: ${fails.length}/${targets.length} failed — ${fails.join(' · ')}`)
+        if (ok > 0) setActionNotice(`Preheat (${preset.name}) sent to ${ok} printer(s); ${fails.length} failed.`)
+      }
+    } finally {
+      setBulkActionsBusy(false)
+    }
+  }
+
   function openAddPrinter() {
     setModal({
       type: 'connection',
@@ -220,20 +332,79 @@ export function FarmPage() {
   return (
     <div className="page">
       <div className="page-head">
-        <h1>Farm</h1>
-        <div className="page-head-actions">
-          {showFarmGrid && viewMode === 'advanced' && canManagePrinters ? (
-            <button
-              type="button"
-              className="btn sm secondary"
-              onClick={() => setPreheatSettingsOpen(true)}
+        <div className="page-head-leading">
+          <h1>Farm</h1>
+        </div>
+        <div className="page-head-toolbar">
+          {canManagePrinters && printers && printers.length > 0 && !useMocks ? (
+            <section
+              className="farm-bulk-panel"
+              aria-labelledby="farm-bulk-heading"
             >
-              Preheat presets…
-            </button>
+              <div className="farm-bulk-panel-head">
+                <h2 id="farm-bulk-heading" className="farm-bulk-panel-title">
+                  Farm-wide
+                </h2>
+                <span className="farm-bulk-panel-stat muted small" aria-live="polite">
+                  {reachableMergedPrinters().length} reachable
+                </span>
+              </div>
+              <div className="farm-bulk-panel-actions" role="group" aria-label="Bulk Moonraker commands">
+                <button
+                  type="button"
+                  className="btn sm secondary farm-bulk-home-btn"
+                  disabled={bulkActionsBusy}
+                  onClick={() => void bulkHomeConnected()}
+                  title="G28 — run on each reachable printer"
+                >
+                  Home all
+                </button>
+                <div className="farm-bulk-preheat-row">
+                  <label className="sr-only" htmlFor="farm-bulk-preset">
+                    Material preset for bulk preheat
+                  </label>
+                  <select
+                    id="farm-bulk-preset"
+                    className="farm-bulk-select"
+                    aria-label="Material preset"
+                    disabled={bulkActionsBusy || preheatPresets.length === 0}
+                    value={bulkPreheatPresetId}
+                    onChange={(e) => setBulkPreheatPresetId(e.target.value)}
+                  >
+                    {preheatPresets.map((pre) => (
+                      <option key={pre.id} value={String(pre.id)}>
+                        {pre.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="btn sm primary farm-bulk-preheat-btn"
+                    disabled={
+                      bulkActionsBusy || preheatPresets.length === 0 || bulkPreheatPresetId === ''
+                    }
+                    onClick={() => void bulkPreheatConnected()}
+                  >
+                    Preheat all
+                  </button>
+                </div>
+              </div>
+            </section>
           ) : null}
-          {showFarmGrid ? (
-            <FarmViewToggle mode={viewMode} onChange={onViewModeChange} />
-          ) : null}
+          <div className="page-head-toolbar-tail">
+            {showFarmGrid && viewMode === 'advanced' && canManagePrinters ? (
+              <button
+                type="button"
+                className="btn sm ghost farm-preset-setup-btn"
+                onClick={() => setPreheatSettingsOpen(true)}
+              >
+                Preheat presets…
+              </button>
+            ) : null}
+            {showFarmGrid ? (
+              <FarmViewToggle mode={viewMode} onChange={onViewModeChange} />
+            ) : null}
+          </div>
         </div>
       </div>
 

@@ -32,7 +32,7 @@ function ControlBtn({
   return (
     <button
       type="button"
-      className={`btn sm${danger ? ' danger' : ' secondary'}`}
+      className={`btn sm printer-local-control${danger ? ' danger' : ' secondary'}`}
       disabled={disabled || (busyAction !== null && !busy)}
       title={title}
       onClick={() => onAction(action)}

@@ -9,6 +9,7 @@ export function AddPrinterCard({ onClick }: Props) {
         +
       </span>
       <span className="printer-add-label">Add printer</span>
+      <span className="printer-add-hint muted small">Moonraker URL, name, optional API key</span>
     </button>
   )
 }
