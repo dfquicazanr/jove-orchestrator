@@ -101,7 +101,7 @@ async def test_moonraker_connection(
 ):
     """Reachability check before saving a new printer or edited URL (does not persist)."""
     url = body.moonraker_base_url.strip().rstrip("/")
-    ok, err, _ = await ping_moonraker_at(url, body.moonraker_api_key)
+    ok, err, _, _, _ = await ping_moonraker_at(url, body.moonraker_api_key)
     return MoonrakerPingResult(ok=ok, message=err)
 
 
@@ -388,7 +388,7 @@ async def moonraker_ping(
     p = db.get(Printer, printer_id)
     if p is None:
         raise HTTPException(status_code=404, detail="Printer not found")
-    ok, err, derived = await ping_printer(p)
+    ok, err, derived, wh_st, wh_msg = await ping_printer(p)
     apply_ping_to_printer(p, ok, err, derived)
     p.updated_at = datetime.now(timezone.utc)
     db.commit()
@@ -400,6 +400,7 @@ async def moonraker_ping(
             last_moonraker_error=p.last_moonraker_error,
             connected=ok,
             persist=False,
+            http_klipper_snapshot=(wh_st, wh_msg),
         )
     return MoonrakerPingResult(ok=ok, message=err)
 

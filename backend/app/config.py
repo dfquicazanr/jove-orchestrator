@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     moonraker_watch_enabled: bool = True
+    # HTTP GET /printer/objects/query on this interval when the Moonraker WebSocket is
+    # not connected, so farm status matches manual Sync without operator action. Set 0 to disable.
+    moonraker_http_liveness_interval_sec: float = 30.0
 
     @property
     def cors_origin_list(self) -> list[str]:

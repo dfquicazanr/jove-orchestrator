@@ -1,6 +1,19 @@
-import pytest
+from app.services.moonraker import derive_printer_status_from_moonraker, extract_webhooks_summary_from_object_status
 
-from app.services.moonraker import derive_printer_status_from_moonraker
+
+def test_extract_webhooks_matches_shutdown_fixture():
+    data = {
+        "result": {
+            "status": {
+                "webhooks": {"state": "shutdown", "state_message": "MCU lost"},
+                "print_stats": {"state": "standby"},
+            }
+        }
+    }
+    st = data["result"]["status"]
+    wh, msg = extract_webhooks_summary_from_object_status(st)
+    assert wh == "shutdown"
+    assert "MCU" in (msg or "")
 
 
 def test_print_stats_standby():

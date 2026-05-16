@@ -57,6 +57,19 @@ def derive_printer_status_from_status(status: dict[str, Any]) -> str | None:
     return None
 
 
+def extract_webhooks_summary_from_object_status(status: dict[str, Any]) -> tuple[str | None, str | None]:
+    """Raw Klipper ``webhooks.state`` and short ``state_message`` (for UI / SSE)."""
+    wh = status.get("webhooks")
+    if not isinstance(wh, dict):
+        return None, None
+    raw = str(wh.get("state") or "").strip()
+    if not raw:
+        return None, None
+    msg = wh.get("state_message")
+    msg_s = str(msg).strip()[:400] if msg else None
+    return (raw, msg_s)
+
+
 def derive_printer_status_from_moonraker(data: Any) -> str | None:
     """Map Moonraker /printer/objects/query or subscribe response to ``last_known_status``."""
     if not isinstance(data, dict):
@@ -108,12 +121,17 @@ def moonraker_http_to_ws_url(base_url: str) -> str:
     return "ws://" + base[len("http://") :] + "/websocket"
 
 
-async def ping_moonraker_at(base_url: str, api_key: str | None = None) -> tuple[bool, str | None, str | None]:
-    """Ping Moonraker at a URL without a ``Printer`` row (e.g. add-printer form test)."""
+async def ping_moonraker_at(
+    base_url: str, api_key: str | None = None
+) -> tuple[bool, str | None, str | None, str | None, str | None]:
+    """Ping Moonraker at a URL without a ``Printer`` row (e.g. add-printer form test).
+
+    Returns ``(ok, error_message, derived_status_if_ok, webhooks_state_if_any, webhooks_message_if_any)``.
+    """
     try:
         base = normalize_moonraker_base_url(base_url)
     except ValueError as e:
-        return False, str(e), None
+        return False, str(e), None, None, None
     try:
         data = await moonraker_get_json(
             base,
@@ -121,15 +139,21 @@ async def ping_moonraker_at(base_url: str, api_key: str | None = None) -> tuple[
             api_key,
         )
         if "result" not in data:
-            return False, "Unexpected Moonraker response", None
+            return False, "Unexpected Moonraker response", None, None, None
         derived = derive_printer_status_from_moonraker(data)
-        return True, None, derived
+        result = data.get("result")
+        status = result.get("status") if isinstance(result, dict) else None
+        wh_st: str | None = None
+        wh_msg: str | None = None
+        if isinstance(status, dict):
+            wh_st, wh_msg = extract_webhooks_summary_from_object_status(status)
+        return True, None, derived, wh_st, wh_msg
     except Exception as e:  # noqa: BLE001 — surface to operator
-        return False, format_moonraker_connection_error(e, base_url=base), None
+        return False, format_moonraker_connection_error(e, base_url=base), None, None, None
 
 
-async def ping_printer(printer: Printer) -> tuple[bool, str | None, str | None]:
-    """Return (ok, error_message, derived_status_if_ok)."""
+async def ping_printer(printer: Printer) -> tuple[bool, str | None, str | None, str | None, str | None]:
+    """Return (ok, error_message, derived_status_if_ok, webhooks_state, webhooks_message)."""
     return await ping_moonraker_at(printer.moonraker_base_url, printer.moonraker_api_key)
 
 
