@@ -13,6 +13,8 @@ type Props = {
   open: boolean
   onClose: () => void
   onSaved: (presets: MaterialPreheatPreset[]) => void
+  title?: string
+  description?: string
 }
 
 function toRows(presets: MaterialPreheatPreset[]): Row[] {
@@ -28,7 +30,13 @@ function newRow(): Row {
   return { key: `new-${crypto.randomUUID()}`, name: '', hotend_c: '200', bed_c: '60' }
 }
 
-export function MaterialPreheatSettingsModal({ open, onClose, onSaved }: Props) {
+export function MaterialPreheatSettingsModal({
+  open,
+  onClose,
+  onSaved,
+  title = 'Material preheat presets',
+  description = 'These temperatures are used for the preheat buttons in Farm Controls view and when tagging G-code uploads in the library.',
+}: Props) {
   const [rows, setRows] = useState<Row[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -110,15 +118,13 @@ export function MaterialPreheatSettingsModal({ open, onClose, onSaved }: Props) 
     >
       <div className="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="preheat-settings-title">
         <div className="modal-head">
-          <h2 id="preheat-settings-title">Material preheat presets</h2>
+          <h2 id="preheat-settings-title">{title}</h2>
           <button type="button" className="linkish" onClick={onClose} aria-label="Close">
             ✕
           </button>
         </div>
         <form className="modal-body" onSubmit={onSubmit}>
-          <p className="muted small">
-            These temperatures are used for the preheat buttons in Farm <strong>Controls</strong> view.
-          </p>
+          <p className="muted small">{description}</p>
           {error ? <p className="error">{error}</p> : null}
 
           <div className="preheat-presets-table-wrap">

@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { FarmViewToggle } from '../components/FarmViewToggle'
 import { AddPrinterCard } from '../components/AddPrinterCard'
 import { PrinterConnectionModal } from '../components/PrinterConnectionModal'
 import { PrinterFilamentModal } from '../components/PrinterFilamentModal'
-import { MaterialPreheatSettingsModal } from '../components/MaterialPreheatSettingsModal'
-import { HomeAssistantSettingsModal } from '../components/HomeAssistantSettingsModal'
+import { FarmMaterialWarning } from '../components/FarmMaterialWarning'
 import { PrinterFarmCard } from '../components/PrinterFarmCard'
 import { FarmBulkConfirmModal, type FarmBulkConfirmState } from '../components/FarmBulkConfirmModal'
 import { HaPrinterPowerOffModal } from '../components/HaPrinterPowerOffModal'
 import { SendGcodeModal } from '../components/SendGcodeModal'
+import { FARM_SUCCESS_TOAST_MS, useAutoDismiss } from '../hooks/useAutoDismiss'
 import { usePrinterStatusStream, type PrinterLiveUpdate } from '../hooks/usePrinterStatusStream'
 import { applyPrinterLiveUpdates } from '../lib/mergePrinterLive'
 import { loadFarmViewMode, saveFarmViewMode, type FarmViewMode } from '../lib/farmViewMode'
@@ -60,8 +60,6 @@ export function FarmPage() {
   const [viewMode, setViewMode] = useState<FarmViewMode>(() => loadFarmViewMode())
   const [controlBusy, setControlBusy] = useState<ControlBusy | null>(null)
   const [preheatPresets, setPreheatPresets] = useState<MaterialPreheatPreset[]>([])
-  const [preheatSettingsOpen, setPreheatSettingsOpen] = useState(false)
-  const [haSettingsOpen, setHaSettingsOpen] = useState(false)
   const [bulkActionsBusy, setBulkActionsBusy] = useState(false)
   const [bulkPreheatPresetId, setBulkPreheatPresetId] = useState('')
   const [bulkConfirm, setBulkConfirm] = useState<FarmBulkConfirmState | null>(null)
@@ -69,6 +67,59 @@ export function FarmPage() {
   const [haPowerOffConfirmPrinter, setHaPowerOffConfirmPrinter] = useState<Printer | null>(null)
   const useMocks = mockPrintersMode()
   const liveStatus = usePrinterStatusStream(!useMocks)
+  const controlFeedbackTimers = useRef<Record<number, number>>({})
+
+  const dismissActionNotice = useCallback(() => setActionNotice(null), [])
+
+  useAutoDismiss(actionNotice, dismissActionNotice, FARM_SUCCESS_TOAST_MS)
+
+  const clearPrinterControlFeedback = useCallback((printerId: number) => {
+    const t = controlFeedbackTimers.current[printerId]
+    if (t !== undefined) {
+      window.clearTimeout(t)
+      delete controlFeedbackTimers.current[printerId]
+    }
+    setControlFeedback((prev) => {
+      if (!(printerId in prev)) return prev
+      const next = { ...prev }
+      delete next[printerId]
+      return next
+    })
+  }, [])
+
+  const setPrinterControlFeedback = useCallback(
+    (printerId: number, feedback: { kind: 'ok' | 'err'; text: string }) => {
+      const existing = controlFeedbackTimers.current[printerId]
+      if (existing !== undefined) {
+        window.clearTimeout(existing)
+        delete controlFeedbackTimers.current[printerId]
+      }
+
+      setControlFeedback((prev) => ({ ...prev, [printerId]: feedback }))
+
+      if (feedback.kind === 'ok') {
+        controlFeedbackTimers.current[printerId] = window.setTimeout(() => {
+          setControlFeedback((prev) => {
+            if (prev[printerId]?.kind !== 'ok') return prev
+            const next = { ...prev }
+            delete next[printerId]
+            return next
+          })
+          delete controlFeedbackTimers.current[printerId]
+        }, FARM_SUCCESS_TOAST_MS)
+      }
+    },
+    [],
+  )
+
+  useEffect(() => {
+    const timers = controlFeedbackTimers.current
+    return () => {
+      for (const t of Object.values(timers)) {
+        window.clearTimeout(t)
+      }
+    }
+  }, [])
 
   const canManagePrinters = isManager && !useMocks
   const showFarmGrid = printers !== null && (printers.length > 0 || canManagePrinters)
@@ -153,11 +204,7 @@ export function FarmPage() {
     }
     setActionError(null)
     setActionNotice(null)
-    setControlFeedback((prev) => {
-      const next = { ...prev }
-      delete next[p.id]
-      return next
-    })
+    clearPrinterControlFeedback(p.id)
 
     if (action === 'power_off') {
       setHaPowerOffConfirmPrinter(p)
@@ -212,7 +259,7 @@ export function FarmPage() {
       }
       const text = res.message ?? `${p.name}: command sent`
       setActionNotice(text)
-      setControlFeedback((prev) => ({ ...prev, [p.id]: { kind: 'ok', text } }))
+      setPrinterControlFeedback(p.id, { kind: 'ok', text })
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Command failed'
       const friendly =
@@ -220,7 +267,7 @@ export function FarmPage() {
           ? 'Control API not found — rebuild the API container (`docker compose build api && docker compose up -d api`).'
           : msg
       setActionError(friendly)
-      setControlFeedback((prev) => ({ ...prev, [p.id]: { kind: 'err', text: friendly } }))
+      setPrinterControlFeedback(p.id, { kind: 'err', text: friendly })
     } finally {
       setControlBusy(null)
     }
@@ -237,7 +284,7 @@ export function FarmPage() {
       })
       const text = res.message ?? `${p.name}: mains power-off sent`
       setActionNotice(text)
-      setControlFeedback((prev) => ({ ...prev, [p.id]: { kind: 'ok', text } }))
+      setPrinterControlFeedback(p.id, { kind: 'ok', text })
       setHaPowerOffConfirmPrinter(null)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Command failed'
@@ -246,7 +293,7 @@ export function FarmPage() {
           ? 'Power API not found — rebuild the API container (`docker compose build api && docker compose up -d api`).'
           : msg
       setActionError(friendly)
-      setControlFeedback((prev) => ({ ...prev, [p.id]: { kind: 'err', text: friendly } }))
+      setPrinterControlFeedback(p.id, { kind: 'err', text: friendly })
     } finally {
       setControlBusy(null)
     }
@@ -625,24 +672,6 @@ export function FarmPage() {
             </section>
           ) : null}
           <div className="page-head-toolbar-tail">
-            {showFarmGrid && viewMode === 'advanced' && canManagePrinters ? (
-              <>
-                <button
-                  type="button"
-                  className="btn sm ghost farm-preset-setup-btn"
-                  onClick={() => setHaSettingsOpen(true)}
-                >
-                  Home Assistant…
-                </button>
-                <button
-                  type="button"
-                  className="btn sm ghost farm-preset-setup-btn"
-                  onClick={() => setPreheatSettingsOpen(true)}
-                >
-                  Preheat presets…
-                </button>
-              </>
-            ) : null}
             {showFarmGrid ? (
               <FarmViewToggle mode={viewMode} onChange={onViewModeChange} />
             ) : null}
@@ -652,7 +681,18 @@ export function FarmPage() {
 
       {error ? <p className="error">{error}</p> : null}
       {actionError ? <p className="error">{actionError}</p> : null}
-      {actionNotice ? <p className="success subtle">{actionNotice}</p> : null}
+      {actionNotice ? (
+        <p className="success subtle farm-action-notice" role="status" aria-live="polite">
+          {actionNotice}
+        </p>
+      ) : null}
+
+      {printers && printers.length > 0 ? (
+        <FarmMaterialWarning
+          printers={applyPrinterLiveUpdates(printers, liveStatus)}
+          showPlannerHint={isManager}
+        />
+      ) : null}
 
       {viewMode === 'advanced' && !canManagePrinters ? (
         <p className="muted small">
@@ -765,21 +805,6 @@ export function FarmPage() {
 
       {modal?.type === 'sendGcode' ? (
         <SendGcodeModal open printer={modal.printer} onClose={() => setModal(null)} />
-      ) : null}
-
-      {preheatSettingsOpen ? (
-        <MaterialPreheatSettingsModal
-          open
-          onClose={() => setPreheatSettingsOpen(false)}
-          onSaved={(presets) => setPreheatPresets(presets)}
-        />
-      ) : null}
-
-      {canManagePrinters ? (
-        <HomeAssistantSettingsModal
-          open={haSettingsOpen}
-          onClose={() => setHaSettingsOpen(false)}
-        />
       ) : null}
 
       <HaPrinterPowerOffModal

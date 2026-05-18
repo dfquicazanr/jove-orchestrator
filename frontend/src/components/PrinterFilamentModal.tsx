@@ -1,6 +1,9 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { apiFetch } from '../api/client'
+import type { MaterialPreheatPreset } from '../types/materialPreheat'
+import { MOCK_PREHEAT_PRESETS } from '../types/materialPreheat'
 import type { Printer } from '../types/printer'
+import { ColorPresetSelect } from './ColorPresetSelect'
 
 type Props = {
   open: boolean
@@ -9,22 +12,56 @@ type Props = {
   onSaved: () => void
 }
 
+function findMaterialId(presets: MaterialPreheatPreset[], loadedMaterial: string): string {
+  const norm = loadedMaterial.trim().toLowerCase()
+  if (!norm) return ''
+  const hit = presets.find((p) => p.name.toLowerCase() === norm)
+  return hit ? String(hit.id) : ''
+}
+
+function findColorId(presets: MaterialPreheatPreset[], materialId: string, loadedColor: string): string {
+  const norm = loadedColor.trim().toLowerCase()
+  if (!norm || !materialId) return ''
+  const material = presets.find((p) => String(p.id) === materialId)
+  const hit = material?.color_presets?.find((c) => c.name.toLowerCase() === norm)
+  return hit ? String(hit.id) : ''
+}
+
 export function PrinterFilamentModal({ open, printer, onClose, onSaved }: Props) {
-  const [material, setMaterial] = useState('')
-  const [color, setColor] = useState('')
+  const [materialPresets, setMaterialPresets] = useState<MaterialPreheatPreset[]>([])
+  const [materialPresetId, setMaterialPresetId] = useState('')
+  const [colorPresetId, setColorPresetId] = useState('')
   const [grams, setGrams] = useState('0')
   const [asNewRoll, setAsNewRoll] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const loadPresets = useCallback(async () => {
+    try {
+      const data = await apiFetch<MaterialPreheatPreset[]>('/settings/material-preheat')
+      setMaterialPresets(data)
+    } catch {
+      setMaterialPresets(MOCK_PREHEAT_PRESETS)
+    }
+  }, [])
+
   useEffect(() => {
     if (!open) return
     setError(null)
     setAsNewRoll(false)
-    setMaterial(printer.loaded_material)
-    setColor(printer.loaded_color)
     setGrams(String(printer.remaining_filament_grams))
-  }, [open, printer])
+    void loadPresets().then(() => {
+      setMaterialPresetId(findMaterialId(materialPresets, printer.loaded_material))
+      setColorPresetId('')
+    })
+  }, [open, printer, loadPresets])
+
+  useEffect(() => {
+    if (!open || materialPresets.length === 0) return
+    const mid = findMaterialId(materialPresets, printer.loaded_material)
+    setMaterialPresetId(mid)
+    setColorPresetId(findColorId(materialPresets, mid, printer.loaded_color))
+  }, [open, printer.loaded_material, printer.loaded_color, materialPresets])
 
   if (!open) return null
 
@@ -36,14 +73,21 @@ export function PrinterFilamentModal({ open, printer, onClose, onSaved }: Props)
       setError('Weight must be a non-negative number.')
       return
     }
+    const preset = materialPresetId ? materialPresets.find((p) => String(p.id) === materialPresetId) : null
+    const color = colorPresetId
+      ? preset?.color_presets?.find((c) => String(c.id) === colorPresetId)
+      : null
+    const loaded_material = preset?.name ?? ''
+    const loaded_color = color?.name ?? ''
+
     setBusy(true)
     try {
       const path = asNewRoll ? `/printers/${printer.id}/roll` : `/printers/${printer.id}/filament`
       await apiFetch<Printer>(path, {
         method: 'PUT',
         json: {
-          loaded_material: material.trim(),
-          loaded_color: color.trim(),
+          loaded_material,
+          loaded_color,
           remaining_filament_grams: g,
         },
       })
@@ -73,19 +117,26 @@ export function PrinterFilamentModal({ open, printer, onClose, onSaved }: Props)
         </div>
         <form className="modal-body" onSubmit={onSubmit}>
           <p className="muted small">
-            Material, color, and weight for what is loaded on <strong>{printer.name}</strong>. Connection settings are
-            under “Printer”.
+            Material and optional color for <strong>{printer.name}</strong>. Planner matching uses material only
+            today; color is stored for your reference.
           </p>
           {error ? <p className="error">{error}</p> : null}
 
-          <label>
-            Material
-            <input value={material} onChange={(e) => setMaterial(e.target.value)} maxLength={64} placeholder="PLA" />
-          </label>
-          <label>
-            Color
-            <input value={color} onChange={(e) => setColor(e.target.value)} maxLength={128} placeholder="opaque black" />
-          </label>
+          <ColorPresetSelect
+            materialPresets={materialPresets}
+            materialPresetId={materialPresetId}
+            value={colorPresetId}
+            disabled={busy}
+            allowEmptyMaterial
+            materialLabel="Material"
+            colorLabel="Color (optional)"
+            onMaterialPresetIdChange={(id) => {
+              setMaterialPresetId(id)
+              setColorPresetId('')
+            }}
+            onColorPresetIdChange={setColorPresetId}
+          />
+
           <label>
             {asNewRoll ? 'Full spool weight (grams)' : 'Remaining filament (grams)'}
             <input type="number" min={0} step={0.1} value={grams} onChange={(e) => setGrams(e.target.value)} />

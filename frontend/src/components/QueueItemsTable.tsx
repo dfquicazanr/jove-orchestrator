@@ -1,3 +1,10 @@
+import {
+  formatFilamentGrams,
+  formatFilamentKg,
+  formatFilamentMeters,
+  formatPrintTime,
+} from '../lib/formatGcodeMeta'
+import { gcodeFileLabel } from '../lib/gcodeLabels'
 import { queueStatusLabel } from '../lib/queueStatusLabels'
 import type { Printer } from '../types/printer'
 import type { QueueItem } from '../types/queue'
@@ -13,9 +20,10 @@ type Props = {
 }
 
 function requirementsLine(item: QueueItem): string {
+  const gf = item.gcode_file
   const parts = [
-    item.gcode_file.required_material?.trim() || null,
-    item.gcode_file.required_color?.trim() || null,
+    gf.material_preset_name?.trim() || gf.required_material?.trim() || null,
+    gf.required_color?.trim() || null,
   ].filter(Boolean)
   return parts.length ? parts.join(' · ') : '—'
 }
@@ -37,7 +45,8 @@ export function QueueItemsTable({
             <th>Job</th>
             <th>Copy</th>
             <th>Requirements</th>
-            <th>Est. filament</th>
+            <th>Filament</th>
+            <th>Print time</th>
             <th>Printer</th>
             <th>Priority</th>
             <th>Status</th>
@@ -51,15 +60,18 @@ export function QueueItemsTable({
             return (
               <tr key={item.id} className={item.status === 'draft' ? 'queue-row-draft' : undefined}>
                 <td className="queue-cell-file" title={item.gcode_file.original_filename}>
-                  {item.gcode_file.original_filename}
+                  {gcodeFileLabel(item.gcode_file)}
                 </td>
                 <td>{item.copy_index + 1}</td>
                 <td className="muted">{requirementsLine(item)}</td>
-                <td>
-                  {item.gcode_file.filament_mass_grams_estimate != null
-                    ? `${item.gcode_file.filament_mass_grams_estimate.toFixed(0)} g`
-                    : '—'}
+                <td className="queue-cell-meta" title={formatFilamentGrams(item.gcode_file.filament_mass_grams_estimate)}>
+                  {formatFilamentKg(item.gcode_file.filament_mass_grams_estimate)}
+                  <span className="muted small">
+                    {' '}
+                    · {formatFilamentMeters(item.gcode_file.filament_length_mm)}
+                  </span>
                 </td>
+                <td>{formatPrintTime(item.gcode_file.print_time_seconds)}</td>
                 <td>
                   {canEdit ? (
                     <select

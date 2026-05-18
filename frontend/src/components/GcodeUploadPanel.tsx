@@ -94,6 +94,8 @@ export function GcodeUploadPanel({ onUploaded }: Props) {
         try {
           const res = await uploadGcodeFile(row.file, {
             copies,
+            enqueue: true,
+            material_preset_id: null,
             required_material: row.material.trim() || null,
             required_color: row.color.trim() || null,
           })

@@ -87,13 +87,14 @@ export function PrinterFarmCard({
   }
 
   const materialLine = [p.loaded_material.trim() || null, p.loaded_color.trim() || null].filter(Boolean).join(' · ')
+  const missingMaterial = !p.loaded_material.trim()
   const statusClass = p.last_known_status
   const showTempStrip =
     moonrakerLive ||
     printerHasRenderableTemps(p)
 
   return (
-    <article className="card printer-card">
+    <article className={`card printer-card${missingMaterial ? ' printer-card--missing-material' : ''}`}>
       <div className="printer-card-head">
         <div className="printer-card-title">
           <h2>{p.name}</h2>
@@ -251,9 +252,16 @@ export function PrinterFarmCard({
         <div className="filament-spiral-wrap">
           <FilamentSpiralGraphic remainingGrams={p.remaining_filament_grams} loadedColor={p.loaded_color} />
         </div>
-        <div className="filament-zone-footer">
-          <span className="filament-zone-material">{materialLine || 'No filament set'}</span>
-          <span className="filament-zone-weight">{p.remaining_filament_grams.toFixed(0)} g remaining</span>
+        <div className="filament-zone-meta">
+          <div className="filament-zone-footer">
+            <span className={`filament-zone-material${missingMaterial ? ' filament-zone-material--warn' : ''}`}>
+              {materialLine || 'No material set'}
+            </span>
+            {missingMaterial ? (
+              <span className="filament-zone-hint">Edit → Filament to assign</span>
+            ) : null}
+            <span className="filament-zone-weight">{p.remaining_filament_grams.toFixed(0)} g remaining</span>
+          </div>
         </div>
       </div>
 
@@ -327,7 +335,15 @@ export function PrinterFarmCard({
         />
       ) : null}
       {controlFeedback ? (
-        <p className={controlFeedback.kind === 'ok' ? 'success subtle printer-card-inline-feedback' : 'error subtle printer-card-inline-feedback'}>
+        <p
+          className={
+            controlFeedback.kind === 'ok'
+              ? 'success subtle printer-card-inline-feedback'
+              : 'error subtle printer-card-inline-feedback'
+          }
+          role="status"
+          aria-live="polite"
+        >
           {controlFeedback.text}
         </p>
       ) : null}

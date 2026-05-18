@@ -13,6 +13,7 @@ from app.api.routes import gcode as gcode_routes
 from app.api.routes import health as health_routes
 from app.api.routes import printers as printers_routes
 from app.api.routes import queue as queue_routes
+from app.api.routes import kits as kits_routes
 from app.api.routes import settings as settings_routes
 from app.api.routes import users as users_routes
 from app.config import get_settings
@@ -90,6 +91,7 @@ def create_app() -> FastAPI:
     app.include_router(printers_routes.router, prefix="/printers", tags=["printers"])
     app.include_router(gcode_routes.router, prefix="/gcode", tags=["gcode"])
     app.include_router(queue_routes.router, prefix="/queue", tags=["queue"])
+    app.include_router(kits_routes.router, prefix="/kits", tags=["kits"])
     app.include_router(settings_routes.router, prefix="/settings", tags=["settings"])
 
     return app

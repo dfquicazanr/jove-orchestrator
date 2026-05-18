@@ -3,15 +3,22 @@ import { useAuth } from '../auth/AuthContext'
 
 export function AppLayout() {
   const { me, logout } = useAuth()
+  const isManager = me?.role === 'manager'
+
   return (
     <div className="shell">
       <header className="topbar">
         <div className="brand">Jove</div>
-        <nav>
+        <nav className="topbar-nav">
           <NavLink to="/" end>
             Farm
           </NavLink>
-          <NavLink to="/queue">Queue</NavLink>
+          <NavLink to="/dashboard">Dashboard</NavLink>
+          <NavLink to="/library">Library</NavLink>
+          <NavLink to="/kits">Kits</NavLink>
+          <NavLink to="/materials">Materials</NavLink>
+          {isManager ? <NavLink to="/planner">Planner</NavLink> : null}
+          {isManager ? <NavLink to="/settings">Settings</NavLink> : null}
         </nav>
         <div className="spacer" />
         <div className="user muted">

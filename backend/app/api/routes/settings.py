@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Body, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_db, require_manager, require_viewer_or_manager
 from app.config import get_settings
+from app.models.material_color_preset import MaterialColorPreset
 from app.models.material_preheat_preset import MaterialPreheatPreset
 from app.models.user import User
 from app.schemas.home_assistant_settings import (
@@ -13,6 +14,8 @@ from app.schemas.home_assistant_settings import (
     HomeAssistantTestResult,
 )
 from app.schemas.material_preheat import (
+    MaterialColorPresetOut,
+    MaterialColorPresetsUpdate,
     MaterialPreheatPresetOut,
     MaterialPreheatPresetsUpdate,
 )
@@ -44,12 +47,22 @@ def _home_assistant_settings_out(db: Session) -> HomeAssistantSettingsOut:
 router = APIRouter()
 
 
+def _load_material_presets(db: Session) -> list[MaterialPreheatPreset]:
+    ensure_default_preheat_presets(db)
+    return (
+        db.query(MaterialPreheatPreset)
+        .options(joinedload(MaterialPreheatPreset.color_presets))
+        .order_by(MaterialPreheatPreset.sort_order, MaterialPreheatPreset.id)
+        .all()
+    )
+
+
 @router.get("/material-preheat", response_model=list[MaterialPreheatPresetOut])
 def list_material_preheat_presets(
     _: User = Depends(require_viewer_or_manager),
     db: Session = Depends(get_db),
 ):
-    presets = ensure_default_preheat_presets(db)
+    presets = _load_material_presets(db)
     return [MaterialPreheatPresetOut.model_validate(p) for p in presets]
 
 
@@ -63,15 +76,74 @@ def replace_material_preheat_presets(
     if len(names) != len(set(n.lower() for n in names)):
         raise HTTPException(status_code=422, detail="Preset names must be unique")
 
-    db.query(MaterialPreheatPreset).delete()
+    keep_ids = {p.id for p in body.presets if p.id is not None}
+    if keep_ids:
+        db.query(MaterialPreheatPreset).filter(MaterialPreheatPreset.id.notin_(keep_ids)).delete(
+            synchronize_session=False
+        )
+    else:
+        db.query(MaterialPreheatPreset).delete(synchronize_session=False)
     db.flush()
 
-    out: list[MaterialPreheatPreset] = []
     for i, item in enumerate(body.presets):
-        row = MaterialPreheatPreset(
+        order = item.sort_order if item.sort_order else i
+        if item.id is not None:
+            row = db.get(MaterialPreheatPreset, item.id)
+            if row is None:
+                raise HTTPException(status_code=422, detail=f"Material preset {item.id} not found")
+            row.name = item.name.strip()
+            row.hotend_c = item.hotend_c
+            row.bed_c = item.bed_c
+            row.sort_order = order
+            db.add(row)
+        else:
+            db.add(
+                MaterialPreheatPreset(
+                    name=item.name.strip(),
+                    hotend_c=item.hotend_c,
+                    bed_c=item.bed_c,
+                    sort_order=order,
+                )
+            )
+
+    db.commit()
+    reloaded = _load_material_presets(db)
+    return [MaterialPreheatPresetOut.model_validate(p) for p in reloaded]
+
+
+@router.put(
+    "/material-preheat/{preset_id}/colors",
+    response_model=list[MaterialColorPresetOut],
+)
+def replace_material_color_presets(
+    preset_id: int,
+    body: MaterialColorPresetsUpdate,
+    _: User = Depends(require_manager),
+    db: Session = Depends(get_db),
+):
+    material = db.get(MaterialPreheatPreset, preset_id)
+    if material is None:
+        raise HTTPException(status_code=404, detail="Material not found")
+
+    names = [c.name.strip().lower() for c in body.colors]
+    if len(names) != len(set(names)):
+        raise HTTPException(status_code=422, detail="Color names must be unique within the material")
+
+    defaults = [c for c in body.colors if c.is_default]
+    if len(defaults) > 1:
+        raise HTTPException(status_code=422, detail="At most one default color per material")
+
+    db.query(MaterialColorPreset).filter(MaterialColorPreset.material_preset_id == preset_id).delete()
+    db.flush()
+
+    out: list[MaterialColorPreset] = []
+    for i, item in enumerate(body.colors):
+        row = MaterialColorPreset(
+            material_preset_id=preset_id,
             name=item.name.strip(),
-            hotend_c=item.hotend_c,
-            bed_c=item.bed_c,
+            hex=item.hex,
+            is_default=item.is_default,
+            notes=item.notes.strip() if item.notes else None,
             sort_order=item.sort_order if item.sort_order else i,
         )
         db.add(row)
@@ -81,7 +153,7 @@ def replace_material_preheat_presets(
     for row in out:
         db.refresh(row)
     out.sort(key=lambda r: (r.sort_order, r.id))
-    return [MaterialPreheatPresetOut.model_validate(p) for p in out]
+    return [MaterialColorPresetOut.model_validate(r) for r in out]
 
 
 @router.get("/home-assistant", response_model=HomeAssistantSettingsOut)

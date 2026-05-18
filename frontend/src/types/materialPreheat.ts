@@ -1,9 +1,20 @@
+export type MaterialColorPreset = {
+  id: number
+  material_preset_id: number
+  name: string
+  hex: string | null
+  is_default: boolean
+  notes: string | null
+  sort_order: number
+}
+
 export type MaterialPreheatPreset = {
   id: number
   name: string
   hotend_c: number
   bed_c: number
   sort_order: number
+  color_presets?: MaterialColorPreset[]
 }
 
 export const MOCK_PREHEAT_PRESETS: MaterialPreheatPreset[] = [
