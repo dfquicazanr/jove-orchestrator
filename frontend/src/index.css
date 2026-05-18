@@ -2494,26 +2494,103 @@ dd {
   color: #c9a227;
 }
 
-.planner-session-material-fields {
+.planner-session-summary {
+  margin-bottom: 0.85rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #243044;
+  background: rgba(12, 16, 24, 0.65);
+}
+
+.planner-session-summary-dl {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem 0.75rem;
+  gap: 0.65rem 1.5rem;
+  margin: 0;
 }
 
-.planner-session-inline-label {
+.planner-session-summary-item {
   display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  font-size: 0.8rem;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.5rem;
 }
 
-.planner-session-inline-label select {
-  min-width: 7.5rem;
-  max-width: 11rem;
+.planner-session-summary-item dt {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8fa3bd;
+}
+
+.planner-session-summary-item dd {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.planner-session-summary-note {
+  font-weight: 400;
+  font-size: 0.78rem;
+  color: #9aa7bd;
+}
+
+.planner-session-summary-materials {
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid #243044;
+}
+
+.planner-session-summary-materials-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8fa3bd;
+}
+
+.planner-session-summary-materials-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+}
+
+.planner-session-summary-materials-list li + li {
+  margin-top: 0.2rem;
+}
+
+.planner-session-summary-material-name {
+  font-weight: 500;
+}
+
+.planner-session-summary-colors {
+  font-size: 0.78rem;
 }
 
 .planner-session-table td {
-  vertical-align: top;
+  vertical-align: middle;
+}
+
+.planner-session-col-material,
+.planner-session-col-color {
+  min-width: 8rem;
+}
+
+.planner-session-col-select {
+  width: 100%;
+  min-width: 7.5rem;
+  max-width: 12rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid #2c3b52;
+  background: #0f141c;
+  color: #e8eef7;
+  font-size: 0.85rem;
 }
 
 .planner-session-row-actions {

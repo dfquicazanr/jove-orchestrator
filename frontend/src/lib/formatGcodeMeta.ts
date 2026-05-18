@@ -14,14 +14,13 @@ export function formatFilamentMeters(mm: number | null | undefined): string {
   return `${m.toFixed(2)} m`
 }
 
+/** Format duration as `Xh Ym` (e.g. `1h 3m`, `0h 45m`). */
 export function formatPrintTime(seconds: number | null | undefined): string {
   if (seconds == null || seconds <= 0) return '—'
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
-  const s = seconds % 60
-  if (h > 0) return `${h}h ${m}m`
-  if (m > 0) return s > 0 ? `${m}m ${s}s` : `${m}m`
-  return `${s}s`
+  if (h === 0 && m === 0) return '<1m'
+  return `${h}h ${m}m`
 }
 
 export function formatFilamentGrams(grams: number | null | undefined): string {

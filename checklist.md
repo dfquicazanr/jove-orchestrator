@@ -1,178 +1,131 @@
-# Implementation checklist — 3D printing farm orchestrator
+# Implementation checklist
 
-Tracks **v1** work against [`vision.md`](vision.md).
+Track what is **shipped** vs **pending** for Jove. For product intent see [`vision.md`](vision.md); for deploy and migrations see [`docs/infrastructure.md`](docs/infrastructure.md).
 
-- `- [ ]` = not done
-- `- [x]` = done
-
-Work top-to-bottom within a section when possible. **Definition of done** for a v1 milestone: shipped items are `[x]`, smoke-tested in your environment, and the API image is rebuilt after backend changes (`docker compose build api && docker compose up -d api`).
-
----
-
-## Phase 0 — Repository and standards
-
-- [x] **Monorepo layout** — `backend/`, `frontend/`; documented in root `README.md`.
-- [x] **Version control hygiene** — `.gitignore` for Python, Node, env files, uploads, IDE artifacts.
-- [x] **Environment template** — Root `.env.example` and `frontend/.env.example` (`VITE_API_URL`).
-- [x] **Code quality baseline** — Ruff (`backend/pyproject.toml`); ESLint + TypeScript (Vite 5).
-- [x] **CI** — `.github/workflows/ci.yml` (Ruff + pytest, `npm ci` + build).
-
----
-
-## v1 — Data layer (PostgreSQL)
-
-- [x] **Migrations** — Alembic (`001_initial_schema`, `002_material_preheat_presets`).
-- [x] **Database provisioning** — `docker-compose.yml` `db` service.
-- [x] **Users** — `users`: username, password hash, `manager` | `viewer`, `is_active`.
-- [x] **Printers** — Moonraker URL + API key, optional `ha_power_entity_id`, status/error cache, loaded filament fields.
-- [x] **G-code files** — `gcode_files` with path, metadata, mass estimate, required material/color, copy count.
-- [x] **Print queue** — `print_queue_items` with copy index, priority, assignment, status.
-- [x] **Farm settings — material preheat presets** — `material_preheat_presets` (name, hotend/bed °C, sort order); defaults seeded in migration + `ensure_default_preheat_presets`.
-- [x] **Indexes and constraints** — Unique username; preset names unique; FK indexes on queue.
-
----
-
-## v1 — Backend API foundation (FastAPI)
-
-- [x] **App factory / lifespan** — Upload dir, optional bootstrap admin, Moonraker watcher start/stop.
-- [x] **Configuration** — `app/config.py`: DB, JWT, CORS, uploads, HA, log level, `moonraker_watch_enabled`.
-- [x] **Logging** — `LOG_LEVEL` via basicConfig.
-- [x] **Global error handling** — `422` validation shape; `X-Request-ID` middleware.
-- [x] **Health** — `GET /health`, `GET /ready` (DB ping).
-
----
-
-## v1 — Authentication and authorization
-
-- [x] **Password hashing** — bcrypt.
-- [x] **JWT** — Bearer token; `JWT_EXPIRE_MINUTES`.
-- [x] **Login / me** — `POST /auth/login`, `GET /auth/me`.
-- [x] **Logout** — Client discards token (stateless v1).
-- [x] **Bootstrap admin** — `INITIAL_ADMIN_*` when no users exist.
-- [x] **User management** — Manager-only `GET/POST /users`, deactivate, password reset.
-- [x] **RBAC** — `require_manager`, `require_viewer_or_manager`, SSE auth for status stream.
-- [x] **Viewer restrictions** — Mutations manager-only on routes.
-
----
-
-## v1 — Moonraker integration
-
-- [x] **HTTP client** — `httpx` with optional `X-Api-Key`; URL normalization (`moonraker_url.py`).
-- [x] **Connection test** — `POST /printers/test-connection` (pre-save) and `POST /printers/{id}/moonraker/ping`.
-- [x] **Live status (WebSocket → SSE)** — `moonraker_watch` subscribes to `print_stats` + `webhooks`; `GET /printers/status/stream` for UI.
-- [x] **Status mapping** — `ready`, `printing`, `paused`, `finished_awaiting_cleanup`, `error`, `offline` from Klipper objects.
-- [ ] **Powered off vs offline** — `powered_off` exists on the model; not inferred from HA/Moonraker yet.
-- [x] **G-code upload to printer** — `POST /printers/{id}/gcode/print` (multipart → Moonraker `files/upload`, `print=true`).
-- [x] **Print control** — `POST .../control/print/{pause|resume|cancel}`.
-- [x] **Motion / heat scripts** — `POST .../control/home`, `preheat`, `cooldown` via `printer/gcode/script`.
-- [ ] **Automatic job executor** — No worker that assigns queue items and starts prints on Moonraker.
-- [ ] **Resilience** — Retries / circuit breaker not implemented.
-
----
-
-## v1 — Home Assistant integration
-
-- [x] **HA client** — REST `turn_on`/`turn_off` by entity domain; URL/token from Postgres (Farm UI) first, then `HOME_ASSISTANT_*` env.
-- [x] **Farm HA settings UI** — `GET|PUT /settings/home-assistant`, optional `POST .../test`, Farm → Controls → **Home Assistant…** (singleton DB row).
-- [x] **Per-printer power mapping** — `ha_power_entity_id`.
-- [x] **Power API** — `POST /printers/{id}/power/on|off` (manager).
-- [x] **Power in Farm UI** — Advanced **Controls** view shows On/Off when entity is configured.
-- [ ] **Power state read** — Optional: set `powered_off` from HA entity state.
-
----
-
-## v1 — Filament features
-
-- [x] **Loaded filament API** — `PUT /printers/{id}/filament`, `PUT .../roll`.
-- [x] **Manual corrections** — Same endpoints + `PATCH /printers/{id}`.
-- [x] **G-code mass parse** — `gcode_parse.py` on library upload.
-- [x] **Deduction on success** — `POST /queue/items/{id}/complete-success`.
-- [x] **Planner filament checks** — Skips assignment when remaining &lt; estimate × waste factor.
-- [x] **Farm UI** — Filament spiral, click-to-edit modal, material/color/weight together.
-
----
-
-## v1 — G-code upload and queue (library)
-
-- [x] **Library upload** — `POST /gcode/upload` with copies and optional requirements.
-- [x] **Storage** — `GCODE_UPLOAD_DIR` (+ Docker volume).
-- [x] **Queue expansion** — One `print_queue_items` row per copy.
-
----
-
-## v1 — Print planning and queue
-
-- [x] **Plan generation** — `POST /queue/plan` (greedy).
-- [x] **Manual overrides** — `PATCH /queue/items/{id}`.
-- [x] **Planner UI** — Upload G-code, waste-factor plan, editable assignments table.
-- [ ] **Executor** — No background loop to dispatch assigned jobs.
-- [x] **Cleanup state** — `finished_awaiting_cleanup` from Moonraker `print_stats.complete`.
-
----
-
-## v1 — Frontend (React + Vite)
-
-- [x] **Scaffold** — Vite 5 + React + TypeScript; `VITE_API_URL`.
-- [x] **Routing** — Login; protected shell with **Farm** + **Queue**.
-- [x] **Auth UX** — Login; JWT in `localStorage`.
-- [x] **Role-aware Farm** — Manager: add/edit printers, controls, G-code send; viewer: read-only cards.
-- [x] **Farm — Overview** — Status pills (human labels), live Moonraker dot, filament spiral, edit menu.
-- [x] **Farm — Controls** — Home, material preheat (from presets), cooldown, print pause/resume/cancel (when printing/paused), HA power.
-- [x] **Preheat presets UI** — **Preheat presets…** modal; `GET/PUT /settings/material-preheat`.
-- [x] **Send G-code** — Per-printer upload from Farm (manager).
-- [x] **Real-time status** — SSE merge on farm cards.
-- [x] **Printer modals** — Connection (incl. test), filament, send G-code.
-- [x] **Queue UI** — Upload, plan drafts, manual printer/priority/cancel (no auto-dispatch yet).
-- [ ] **User admin UI** — API only (`/users`).
-- [ ] **Accessibility pass** — Keyboard/contrast/breakpoints beyond baseline.
-
----
-
-## v1 — Deployment and operations
-
-- [x] **Dockerfile — backend** — Alembic + uvicorn on start.
-- [ ] **Dockerfile — frontend** — Dev: `npm run dev`; prod static + nginx/CDN TBD.
-- [x] **`docker-compose.yml`** — `db` + `api`; optional `docker-compose.tailscale.yml` notes.
-- [x] **Networking** — CORS; LAN/Tailscale documented in `README.md`.
-- [x] **Upgrade path** — `alembic upgrade head` in container CMD.
-- [ ] **Backup / ops runbook** — Brief Postgres backup note in README.
-
----
-
-## v1 — Testing and verification
-
-- [x] **Backend unit tests (core)** — G-code parse, Moonraker URL/status/WS helpers, print upload sanitize, control scripts, preheat presets.
-- [ ] **Backend integration tests** — Auth, RBAC, API + DB.
-- [ ] **Manual QA doc** — `docs/manual-qa.md`.
-- [x] **Dev seeds** — `backend/scripts/seed_printers.py` for demo statuses.
-
----
-
-## Post-v1 / future
-
-- [ ] **Distributed multi-site orchestrators** — See vision.
-- [ ] **Advanced planner** — Time windows, color batching, maintenance.
-- [ ] **SSO / OIDC**
-- [ ] **Filament hardware** — Scales, RFID, tags.
-- [ ] **Queue executor + full operator workflow** — Upload → plan → auto-start → complete → filament decrement without manual hooks.
-- [ ] **Production frontend container** — nginx or CDN serve of `frontend/dist`.
+**Legend:** ✅ Done · 🟡 Partial · ⬜ Not started
 
 ---
 
 ## Progress snapshot
 
-| Area | Status | Notes |
-| --- | --- | --- |
-| Repo & tooling | Done | |
-| Database | Done | Through migration `002` |
-| Auth & RBAC | Done | |
-| Moonraker | Mostly done | Live SSE, controls, direct print; no auto executor |
-| Home Assistant | Mostly done | On/off API + UI; no state read |
-| Filament | Done | API + planner + farm UI |
-| Uploads & queue API | Done | Library upload; queue UI minimal |
-| Farm dashboard | Done | Overview + Controls, presets, G-code send |
-| Docker | In progress | API+DB; no `web` service |
+| Area | Status |
+| --- | --- |
+| Auth (JWT, roles, bootstrap admin) | ✅ |
+| Printers CRUD + Moonraker ping/sync | ✅ |
+| Live status (WS watcher → SSE) | ✅ |
+| Farm UI (cards, controls, filament, G-code print) | ✅ |
+| Material preheat presets | ✅ |
+| Home Assistant power + settings API/UI | ✅ |
+| G-code library + upload + metadata | ✅ |
+| Material colors + default density | ✅ |
+| Print kits (API + UI) | ✅ |
+| Planner session + optimize preview + commit | ✅ |
+| Dashboard timeline | ✅ |
+| Queue executor (auto-dispatch) | ⬜ |
+| Production frontend in compose | ⬜ |
+| User admin UI | ⬜ |
 
 ---
 
-*Last updated to match shipped farm controls, material preheat presets, paused status, and Moonraker live stream.*
+## Database / migrations
+
+| Migration | ✅ | Notes |
+| --- | --- | --- |
+| `001_initial_schema` | ✅ | Users, printers, gcode_files, print_queue_items |
+| `002_material_preheat_presets` | ✅ | |
+| `003_farm_ha` | ✅ | HA settings in Postgres |
+| `004_gcode_meta` | ✅ | Library metadata columns |
+| `005_materials_kits` | ✅ | Colors, print_kits, kit_line_items |
+| `006_gcode_display_color` | ✅ | display_name, color preset FK |
+| `007_material_default_density` | ✅ | Filament reconcile from density |
+| `008_drop_gcode_total_copies` | ✅ | Copies only on kits / queue items |
+
+---
+
+## Backend API
+
+| Feature | ✅ | Notes |
+| --- | --- | --- |
+| `/auth/login`, `/auth/me` | ✅ | |
+| `/users` CRUD (manager) | ✅ | No SPA admin |
+| `/printers` + SSE stream | ✅ | |
+| Moonraker controls + print G-code | ✅ | |
+| `/gcode` upload, list, patch, delete | ✅ | No per-file copy count (008) |
+| `/kits` CRUD | ✅ | Line quantities |
+| `/queue/items`, timeline | ✅ | |
+| `/queue/plan/preview`, `/plan`, `/plan/commit` | ✅ | Greedy + constrained-first sort |
+| `/queue/items/{id}/complete-success` | ✅ | Filament deduct hook |
+| Filament reconcile service | ✅ | `filament_estimate.py` + tests |
+| Planner constrained-first assignment | ✅ | Material/color before flexible jobs |
+
+---
+
+## Frontend
+
+| Page / feature | ✅ | Notes |
+| --- | --- | --- |
+| Login + protected routes | ✅ | |
+| Farm (`/`) | ✅ | Overview + controls, SSE merge |
+| Dashboard (`/dashboard`) | ✅ | Print timeline |
+| Library (`/library`) | ✅ | Weight/Length (g), parser debug accordion |
+| Materials (`/materials`) | ✅ | Preheat + density |
+| Kits (`/kits`) | ✅ | Per-line quantity |
+| Planner (`/planner`) | ✅ | Material/Color columns, session summary, `formatPrintTime` |
+| Settings (`/settings`) | ✅ | HA + farm settings |
+| Queue page | ✅ | Redirects to planner |
+| G-code upload on library only | ✅ | `enqueue` path for queue-only upload if used |
+| Mock printers mode | ✅ | `?mockPrinters=1` |
+
+---
+
+## Planner / queue (behavior)
+
+| Item | ✅ | Notes |
+| --- | --- | --- |
+| Session state (add/remove/duplicate rows) | ✅ | |
+| Default color **Any** when file has no color | ✅ | |
+| Safety margin % → API waste factor | ✅ | |
+| Optimize preview (uncommitted) | ✅ | |
+| Commit to DB queue items | ✅ | |
+| Session totals (time, filament, materials) | ✅ | |
+| Auto-start prints from queue | ⬜ | **Executor not built** |
+| Row-level dispatch UI on farm | ⬜ | Depends on executor |
+
+---
+
+## Integrations & ops
+
+| Item | ✅ | Notes |
+| --- | --- | --- |
+| Docker Compose (db + api) | ✅ | |
+| Alembic on API container start | ✅ | |
+| Tailscale compose overlay | ✅ | `docker-compose.tailscale.yml` |
+| `docs/infrastructure.md` | ✅ | |
+| CI (Ruff, pytest, frontend build) | ✅ | |
+| Frontend production service in compose | ⬜ | |
+| HA read for `powered_off` | ⬜ | Power on/off works |
+
+---
+
+## Testing
+
+| Area | ✅ | Notes |
+| --- | --- | --- |
+| Moonraker status derivation | ✅ | Webhook before print_stats |
+| G-code parse helpers | ✅ | |
+| Filament estimate reconcile | ✅ | |
+| Planner assignment tests | 🟡 | Extend as rules grow |
+| E2E / integration (auth + routes) | ⬜ | |
+
+---
+
+## Suggested next milestones
+
+1. **Queue executor** — Poll or worker: `queued` → Moonraker print start → completion → `complete-success`.
+2. **HA powered_off** — Subscribe or poll switch entity per printer.
+3. **Production frontend** — `frontend` service in compose or documented nginx snippet.
+4. **User admin UI** — Wrap existing `/users` API.
+
+---
+
+*Update this file when shipping features or migrations so `AGENT_HANDOFF.md` and agents stay accurate.*

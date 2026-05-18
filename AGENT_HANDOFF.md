@@ -1,12 +1,12 @@
 # Agent handoff — Jove (3D farm orchestrator)
 
-This file is for **Cursor agents** (or other contributors) picking up work on this repo. Read **`vision.md`** (product intent), **`checklist.md`** (what’s done / not done), and root **`README.md`** (run instructions). Treat **`checklist.md`** as the source of truth for shipped vs pending; **`vision.md`** has a few lines that pre-date the latest queue UI and may be stale.
+This file is for **Cursor agents** (or other contributors) picking up work on this repo. Read **`vision.md`** (product intent), **`checklist.md`** (what’s done / not done), **`docs/infrastructure.md`** (Docker, migrations, deploy), and root **`README.md`** (run instructions). Treat **`checklist.md`** as the source of truth for shipped vs pending.
 
 ---
 
 ## What this project is
 
-**Jove** orchestrates a **Klipper / Moonraker** print farm: live status, filament tracking, farm controls (home, preheat, print actions), G-code library + **greedy queue planner**, optional **Home Assistant** power. Stack: **FastAPI + PostgreSQL + Alembic** (backend), **React + Vite + TypeScript** (frontend).
+**Jove** orchestrates a **Klipper / Moonraker** print farm: live status, filament tracking, farm controls, G-code library, print kits, **planner session** (makespan optimize + commit), dashboard timeline, optional **Home Assistant** power. Stack: **FastAPI + PostgreSQL + Alembic** (backend), **React + Vite + TypeScript** (frontend).
 
 ---
 
@@ -15,7 +15,8 @@ This file is for **Cursor agents** (or other contributors) picking up work on th
 | Path | Role |
 |------|------|
 | `backend/app/` | FastAPI app: `main.py`, `config.py`, `api/routes/`, `models/`, `services/`, `schemas/` |
-| `backend/alembic/` | Migrations (`001_initial_schema`, `002_material_preheat_presets`) |
+| `backend/alembic/` | Migrations `001`–`008` (see `docs/infrastructure.md`) |
+| `docs/` | `infrastructure.md`, doc index |
 | `backend/tests/` | `pytest` (Moonraker helpers, controls, gcode parse, etc.) |
 | `backend/scripts/seed_printers.py` | Optional demo printers (RFC 5737 IPs) |
 | `frontend/src/` | Pages, components, hooks, `api/client`, types |
@@ -107,14 +108,16 @@ From inside the **API container**, printer `moonraker_base_url` must be reachabl
 
 ## Queue & planner
 
-- **Upload**: `POST /gcode/upload` — metadata JSON: `copies`, `required_material`, `required_color`; creates `gcode_files` + one **`draft`** `print_queue_items` row per copy.
-- **List / plan**: `GET /queue/items` (optional `status_filter`), `POST /queue/plan` with `waste_factor` (1.0–2.0; UI sends **percent headroom** converted to multiplier).
-- **Patch**: `PATCH /queue/items/{id}` — assignment, priority, status.
-- **Planner logic**: `backend/app/services/planner.py` — greedy; only assigns printers in **ready** / **finished_awaiting_cleanup** with matching material/color and filament ≥ estimate × waste factor.
+- **Library upload**: `POST /gcode/upload` — stores `gcode_files` only (no per-file default copies; migration `008`). Optional `enqueue: true` can still create queue rows with `copies` in that path.
+- **Kits**: `GET/POST/PUT/DELETE /kits` — line items carry **quantity**.
+- **Queue**: `GET /queue/items`, `GET /queue/timeline`, `POST /queue/items`, `PATCH /queue/items/{id}`.
+- **Planner**: `POST /queue/plan/preview`, `POST /queue/plan`, `POST /queue/plan/commit` — `waste_factor` 1.0–2.0 (UI percent headroom → multiplier).
+- **Planner logic**: `backend/app/services/planner.py` — greedy assignment; **constrained material/color jobs sorted before flexible rows**, then by duration for makespan. Printers must be **ready** / **finished_awaiting_cleanup** with matching material/color and enough filament.
+- **Filament**: `backend/app/services/filament_estimate.py` reconciles mass/length using material `default_density_g_cm3` (no hardcoded g/m fallback in parser).
 - **Filament deduct (hook)**: `POST /queue/items/{id}/complete-success`.
-- **Not implemented**: background **job executor** (auto-dispatch queued jobs to Moonraker) — major next step.
+- **Not implemented**: background **job executor** (auto-dispatch queued jobs to Moonraker).
 
-Frontend queue: `frontend/src/pages/QueuePage.tsx`, `GcodeUploadPanel` (multi-file batch, per-file copies), `QueueItemsTable`, `InfoTooltip` for safety margin, `lib/filamentSafetyMargin.ts` (percent ↔ API).
+Frontend: `PlannerPage.tsx`, `plannerAssign.ts`, `plannerSessionSummary.ts`, `GcodeLibraryPanel.tsx`, `DashboardPage.tsx`, `KitsPage.tsx`. `/queue` → `/planner`.
 
 ---
 
@@ -130,7 +133,7 @@ Frontend queue: `frontend/src/pages/QueuePage.tsx`, `GcodeUploadPanel` (multi-fi
 
 - **`User`**, **`Printer`** (`PrinterStatus` enum string values — used in API and UI pills).
 - **`GCodeFile`**, **`PrintQueueItem`** (`PrintQueueStatus`).
-- **`MaterialPreheatPreset`** — farm-wide preheat rows; `GET/PUT /settings/material-preheat`.
+- **`MaterialPreheatPreset`**, material colors (with `default_density_g_cm3`), **`PrintKit`** + line items — `GET/PUT /settings/material-preheat`.
 
 ---
 
@@ -162,8 +165,9 @@ Frontend queue: `frontend/src/pages/QueuePage.tsx`, `GcodeUploadPanel` (multi-fi
 | G-code upload | `backend/app/api/routes/gcode.py` |
 | Moonraker status mapping | `backend/app/services/moonraker.py` |
 | WS watcher | `backend/app/services/moonraker_watch.py` |
-| Planner | `backend/app/services/planner.py` |
-| Farm + queue pages | `frontend/src/pages/FarmPage.tsx`, `QueuePage.tsx` |
+| Planner | `backend/app/services/planner.py`, `filament_estimate.py` |
+| Farm, planner, library | `FarmPage.tsx`, `PlannerPage.tsx`, `LibraryPage.tsx`, `DashboardPage.tsx` |
+| Planner assign (client preview) | `frontend/src/lib/plannerAssign.ts`, `plannerRequirements.ts` |
 | SSE client | `frontend/src/hooks/usePrinterStatusStream.ts` |
 
 ---

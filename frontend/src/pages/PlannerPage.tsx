@@ -6,6 +6,7 @@ import { MissingPrintTimeModal } from '../components/MissingPrintTimeModal'
 import { PrintTimeline } from '../components/PrintTimeline'
 import { FilamentSafetyMarginHelp } from '../lib/filamentSafetyMarginHelp'
 import { parseSafetyMarginPercent, percentToWasteFactor } from '../lib/filamentSafetyMargin'
+import { formatPrintTime } from '../lib/formatGcodeMeta'
 import { assignPlannerSession } from '../lib/plannerAssign'
 import { FarmMaterialWarning } from '../components/FarmMaterialWarning'
 import { incompatibilityReason } from '../lib/plannerCompatibility'
@@ -16,6 +17,8 @@ import {
 } from '../lib/plannerRequirements'
 import { consumePlannerImport } from '../lib/plannerSessionStorage'
 import { PlannerSessionMaterialFields } from '../components/PlannerSessionMaterialFields'
+import { PlannerSessionSummary } from '../components/PlannerSessionSummary'
+import { computePlannerSessionSummary } from '../lib/plannerSessionSummary'
 import { buildPrinterSchedule, type ScheduleJobInput } from '../lib/printerSchedule'
 import { useUnsavedPlannerWarning } from '../hooks/useUnsavedPlannerWarning'
 import { FARM_SUCCESS_TOAST_MS, useAutoDismiss } from '../hooks/useAutoDismiss'
@@ -89,6 +92,11 @@ export function PlannerPage() {
   useUnsavedPlannerWarning(session.length > 0)
 
   const filesById = useMemo(() => new Map(files.map((f) => [f.id, f])), [files])
+
+  const sessionSummary = useMemo(
+    () => computePlannerSessionSummary(session, filesById, materials),
+    [session, filesById, materials],
+  )
 
   const loadMeta = useCallback(async () => {
     try {
@@ -437,11 +445,14 @@ export function PlannerPage() {
         {session.length === 0 ? (
           <p className="muted">No jobs in this session yet.</p>
         ) : (
+          <>
+          <PlannerSessionSummary summary={sessionSummary} />
           <table className="table queue-table planner-session-table">
             <thead>
               <tr>
                 <th>Print</th>
-                <th>Material & color</th>
+                <th>Material</th>
+                <th>Color</th>
                 <th>Duration</th>
                 <th>Assigned</th>
                 <th />
@@ -455,9 +466,10 @@ export function PlannerPage() {
                 return (
                   <tr key={item.sessionId}>
                     <td title={item.originalFilename}>{item.displayName}</td>
-                    <td>
+                    <td className="planner-session-col-material">
                       {file ? (
                         <PlannerSessionMaterialFields
+                          part="material"
                           item={item}
                           file={file}
                           materials={materials}
@@ -465,13 +477,25 @@ export function PlannerPage() {
                           onChange={(next) => updateSessionItem(item.sessionId, next)}
                         />
                       ) : (
-                        <span className="muted">File missing</span>
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td className="planner-session-col-color">
+                      {file ? (
+                        <PlannerSessionMaterialFields
+                          part="color"
+                          item={item}
+                          file={file}
+                          materials={materials}
+                          disabled={optimizing || committing}
+                          onChange={(next) => updateSessionItem(item.sessionId, next)}
+                        />
+                      ) : (
+                        <span className="muted">—</span>
                       )}
                     </td>
                     <td>
-                      {item.printTimeSeconds != null
-                        ? `${Math.round(item.printTimeSeconds / 60)} min`
-                        : '—'}
+                      {formatPrintTime(item.printTimeSeconds)}
                     </td>
                     <td>{previewReady ? (printer?.name ?? '— Unassigned —') : '—'}</td>
                     <td className="planner-session-row-actions">
@@ -497,6 +521,7 @@ export function PlannerPage() {
               })}
             </tbody>
           </table>
+          </>
         )}
       </section>
 

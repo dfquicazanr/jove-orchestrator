@@ -1,12 +1,28 @@
 # Jove — 3D printing farm orchestrator
 
-Centralized orchestration for Klipper/Moonraker farms: live status, filament tracking, farm controls (home/preheat/print), G-code send, material preheat presets, filament-aware queue/planner API, and Home Assistant power. See [`vision.md`](vision.md) for product intent and [`checklist.md`](checklist.md) for implementation tracking.
+Centralized orchestration for **Klipper / Moonraker** farms: live status, filament tracking, farm controls, G-code library, print kits, makespan-aware planner, dashboard timeline, and optional Home Assistant power.
 
-### Farm UI (current)
+| Document | Description |
+| --- | --- |
+| [`vision.md`](vision.md) | Product goals, workflows, and decisions |
+| [`checklist.md`](checklist.md) | Implementation status and milestones |
+| [`docs/README.md`](docs/README.md) | Doc index and UI route map |
+| [`docs/infrastructure.md`](docs/infrastructure.md) | Docker, networking, env, migrations, production |
+| [`AGENT_HANDOFF.md`](AGENT_HANDOFF.md) | Contributor / agent architecture notes |
 
-- **Overview** — Printer cards with live status, filament spiral, edit menu (connection, sync, send G-code, delete).
-- **Controls** — Per-printer commands; **Preheat presets…** edits farm-wide material temperatures.
-- **Queue** — Read-only list (upload/plan/dispatch UI not built yet).
+### Operator UI (current)
+
+| Route | Access | Purpose |
+| --- | --- | --- |
+| `/` | All | **Farm** — printer cards, controls, live SSE |
+| `/dashboard` | All | **Dashboard** — cross-printer job timeline |
+| `/library` | All (upload: manager) | **G-code library** — metadata, filament estimates, parser debug |
+| `/materials` | Manager | Preheat presets, colors, density (g/cm³) |
+| `/kits` | Manager | **Print kits** — file bundles with per-line quantity |
+| `/planner` | Manager | **Planner** — session, optimize, commit to queue |
+| `/settings` | Manager | Farm settings (e.g. Home Assistant) |
+
+`/queue` redirects to `/planner`.
 
 After pulling backend changes, rebuild the API image so routes and migrations apply:
 
@@ -20,6 +36,9 @@ docker compose build api && docker compose up -d api
 | --- | --- |
 | `backend/` | FastAPI app, SQLAlchemy models, Alembic migrations |
 | `frontend/` | React + Vite operator UI |
+| `docs/` | Infrastructure and documentation index |
+| `docker-compose.yml` | Postgres + API |
+| `docker-compose.tailscale.yml` | Optional MagicDNS for API → printers |
 
 ## Quick start (development)
 
@@ -68,7 +87,7 @@ docker compose build api && docker compose up -d api
 
 ## Docker (API + Postgres)
 
-From repo root (optional: set `JWT_SECRET_KEY` in your shell for production):
+From repo root (set `JWT_SECRET_KEY` in production):
 
 ```bash
 docker compose up --build
@@ -76,7 +95,16 @@ docker compose up --build
 
 API: `http://localhost:8000` · OpenAPI: `http://localhost:8000/docs`
 
+Printers on **Tailscale MagicDNS** from inside the API container:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.tailscale.yml up -d --build api
+```
+
+See [`docs/infrastructure.md`](docs/infrastructure.md) for volumes, migrations (`001`–`008`), health checks, and production checklist.
+
 ## Security notes (v1)
 
 - Moonraker API keys and HA tokens are sensitive; keep them in `.env` or your secrets manager.
 - Change bootstrap admin password immediately after first login in production.
+- HA credentials saved via the UI are stored in Postgres — protect database backups.

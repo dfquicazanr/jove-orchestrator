@@ -8,6 +8,7 @@ import {
 } from '../lib/plannerRequirements'
 
 type Props = {
+  part: 'material' | 'color'
   item: PlannerSessionItem
   file: GCodeFile
   materials: MaterialPreheatPreset[]
@@ -26,6 +27,7 @@ function fileColorLabel(file: GCodeFile): string {
 }
 
 export function PlannerSessionMaterialFields({
+  part,
   item,
   file,
   materials,
@@ -108,41 +110,41 @@ export function PlannerSessionMaterialFields({
     })
   }
 
+  if (part === 'material') {
+    return (
+      <select
+        className="planner-session-col-select"
+        value={materialKey}
+        disabled={disabled}
+        onChange={(e) => setMaterial(e.target.value)}
+        aria-label="Material"
+      >
+        <option value="file">{fileMaterialLabel(file)}</option>
+        {materials.map((m) => (
+          <option key={m.id} value={`preset:${m.id}`}>
+            {m.name}
+          </option>
+        ))}
+        <option value="any">Any</option>
+      </select>
+    )
+  }
+
   return (
-    <div className="planner-session-material-fields">
-      <label className="planner-session-inline-label">
-        <span className="muted small">Material</span>
-        <select
-          value={materialKey}
-          disabled={disabled}
-          onChange={(e) => setMaterial(e.target.value)}
-        >
-          <option value="file">{fileMaterialLabel(file)}</option>
-          {materials.map((m) => (
-            <option key={m.id} value={`preset:${m.id}`}>
-              {m.name}
-            </option>
-          ))}
-          <option value="any">Any</option>
-        </select>
-      </label>
-      <label className="planner-session-inline-label">
-        <span className="muted small">Color</span>
-        <select
-          value={colorKey}
-          disabled={disabled || item.matchAnyMaterial}
-          onChange={(e) => setColor(e.target.value)}
-        >
-          <option value="file">{fileColorLabel(file)}</option>
-          {colorOptions.map((c) => (
-            <option key={c.id} value={`preset:${c.id}`}>
-              {c.name}
-            </option>
-          ))}
-          <option value="any">Any</option>
-        </select>
-      </label>
-    </div>
+    <select
+      className="planner-session-col-select"
+      value={colorKey}
+      disabled={disabled || item.matchAnyMaterial}
+      onChange={(e) => setColor(e.target.value)}
+      aria-label="Color"
+    >
+      <option value="file">{fileColorLabel(file)}</option>
+      {colorOptions.map((c) => (
+        <option key={c.id} value={`preset:${c.id}`}>
+          {c.name}
+        </option>
+      ))}
+      <option value="any">Any</option>
+    </select>
   )
 }
-
