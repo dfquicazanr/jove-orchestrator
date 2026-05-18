@@ -19,6 +19,7 @@ class MaterialPreheatPreset(Base):
     name: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     hotend_c: Mapped[float] = mapped_column(Float, nullable=False)
     bed_c: Mapped[float] = mapped_column(Float, nullable=False)
+    default_density_g_cm3: Mapped[float | None] = mapped_column(Float, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

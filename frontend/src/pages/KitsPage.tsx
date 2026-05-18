@@ -6,6 +6,7 @@ import { gcodeFileLabel } from '../lib/gcodeLabels'
 import type { GCodeFile } from '../types/gcode'
 import type { MaterialPreheatPreset } from '../types/materialPreheat'
 import { MOCK_PREHEAT_PRESETS } from '../types/materialPreheat'
+import { resolveSessionItemColor } from '../lib/plannerRequirements'
 import { appendPlannerImport } from '../lib/plannerSessionStorage'
 import type { PlannerSessionItem } from '../types/plannerSession'
 import type { PrintKit, PrintKitItemDraft } from '../types/printKit'
@@ -184,23 +185,27 @@ export function KitsPage() {
       for (const line of kit.items) {
         const file = filesById.get(line.gcode_file_id)
         for (let q = 0; q < line.quantity; q++) {
-          added.push({
-            sessionId: newSessionId(),
-            gcodeFileId: line.gcode_file_id,
-            originalFilename: line.gcode_filename,
-            displayName: line.gcode_display_name || line.gcode_filename,
-            printTimeSeconds: file?.print_time_seconds ?? null,
-            priority: 0,
-            materialPresetId: line.material_preset_id,
-            materialPresetName: line.material_preset_name,
-            materialColorPresetId: line.material_color_preset_id,
-            materialColorPresetName: line.material_color_preset_name,
-            matchAnyMaterial: false,
-            matchAnyColor: false,
-            printKitId: kit.id,
-            kitRunIndex: run,
-            copyLabel: `${run + 1}.${q + 1}`,
-          })
+          added.push(
+            resolveSessionItemColor(
+              {
+                sessionId: newSessionId(),
+                gcodeFileId: line.gcode_file_id,
+                originalFilename: line.gcode_filename,
+                displayName: line.gcode_display_name || line.gcode_filename,
+                printTimeSeconds: file?.print_time_seconds ?? null,
+                priority: 0,
+                materialPresetId: line.material_preset_id,
+                materialPresetName: line.material_preset_name,
+                materialColorPresetId: line.material_color_preset_id,
+                materialColorPresetName: line.material_color_preset_name,
+                matchAnyMaterial: false,
+                matchAnyColor: false,
+                printKitId: kit.id,
+                kitRunIndex: run,
+                copyLabel: `${run + 1}.${q + 1}`,
+              },
+            ),
+          )
         }
       }
     }

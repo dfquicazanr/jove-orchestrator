@@ -13,6 +13,8 @@ export type MaterialPreheatPreset = {
   name: string
   hotend_c: number
   bed_c: number
+  /** g/cm³ — used to estimate missing filament weight/length in the library. */
+  default_density_g_cm3?: number | null
   sort_order: number
   color_presets?: MaterialColorPreset[]
 }

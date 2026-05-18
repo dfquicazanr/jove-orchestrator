@@ -84,13 +84,24 @@ def _compatible_state(
     return True
 
 
+def _constraint_score(job: GCodeFile, item: PrintQueueItem) -> int:
+    """Stricter material/color requirements first so flexible jobs can use other printers."""
+
+    score = 0
+    if _effective_material(job, item):
+        score += 2
+    if _effective_color(job, item):
+        score += 1
+    return score
+
+
 def _sort_items_for_planning(items: list[PrintQueueItem]) -> list[PrintQueueItem]:
-    """Higher priority first; longer jobs first within the same priority (LPT)."""
+    """Higher priority first, then constrained jobs, then longer jobs (LPT)."""
 
     def sort_key(item: PrintQueueItem) -> tuple:
         job = item.gcode_file
         dur = job_duration_seconds(job)
-        return (-item.priority, -dur, item.id)
+        return (-item.priority, -_constraint_score(job, item), -dur, item.id)
 
     return sorted(items, key=sort_key)
 

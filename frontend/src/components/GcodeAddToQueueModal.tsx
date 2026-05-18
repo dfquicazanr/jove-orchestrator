@@ -19,7 +19,7 @@ export function GcodeAddToQueueModal({ file, open, onClose, onAdded }: Props) {
 
   useEffect(() => {
     if (!open || !file) return
-    setCopies(String(file.total_copies_requested || 1))
+    setCopies('1')
     setPriority('0')
     setError(null)
   }, [open, file])

@@ -92,14 +92,14 @@ export function GcodeUploadPanel({ onUploaded }: Props) {
       for (const row of rows) {
         const copies = parseCopies(row.copies)!
         try {
-          const res = await uploadGcodeFile(row.file, {
+          await uploadGcodeFile(row.file, {
             copies,
             enqueue: true,
             material_preset_id: null,
             required_material: row.material.trim() || null,
             required_color: row.color.trim() || null,
           })
-          jobsAdded += res.total_copies_requested
+          jobsAdded += copies
         } catch (err) {
           failedIds.add(row.id)
           const msg = err instanceof Error ? err.message : 'Upload failed'

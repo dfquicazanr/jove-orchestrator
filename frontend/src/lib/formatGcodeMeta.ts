@@ -26,5 +26,7 @@ export function formatPrintTime(seconds: number | null | undefined): string {
 
 export function formatFilamentGrams(grams: number | null | undefined): string {
   if (grams == null || Number.isNaN(grams)) return '—'
-  return `${grams.toFixed(0)} g`
+  if (grams >= 100) return `${grams.toFixed(0)} g`
+  if (grams >= 10) return `${grams.toFixed(1)} g`
+  return `${grams.toFixed(2)} g`
 }

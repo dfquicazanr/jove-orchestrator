@@ -40,8 +40,6 @@ class GCodeFile(Base):
         index=True,
     )
 
-    total_copies_requested: Mapped[int] = mapped_column(Integer, default=1)
-
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     uploader: Mapped[User] = relationship("User", foreign_keys=[uploaded_by_id])

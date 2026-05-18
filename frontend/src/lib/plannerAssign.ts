@@ -3,6 +3,7 @@ import type { Printer } from '../types/printer'
 import type { PlannerSessionItem } from '../types/plannerSession'
 import type { QueueItem } from '../types/queue'
 import { incompatibilityReason } from './plannerCompatibility'
+import { requiredColor, requiredMaterial } from './plannerRequirements'
 
 const DEFAULT_PRINT_TIME_SECONDS = 30 * 60
 
@@ -42,11 +43,22 @@ function compatibleState(
   )
 }
 
+/** Higher score = stricter material/color requirements — assign those jobs before flexible ones. */
+function constraintScore(file: GCodeFile, item: PlannerSessionItem): number {
+  let score = 0
+  if (!item.matchAnyMaterial && requiredMaterial(file, item)) score += 2
+  if (!item.matchAnyColor && requiredColor(file, item)) score += 1
+  return score
+}
+
 function sortSessionItems(items: PlannerSessionItem[], filesById: Map<number, GCodeFile>): PlannerSessionItem[] {
   return [...items].sort((a, b) => {
     if (b.priority !== a.priority) return b.priority - a.priority
     const fileA = filesById.get(a.gcodeFileId)
     const fileB = filesById.get(b.gcodeFileId)
+    const cA = fileA ? constraintScore(fileA, a) : 0
+    const cB = fileB ? constraintScore(fileB, b) : 0
+    if (cB !== cA) return cB - cA
     const durA = fileA ? jobDurationSeconds(fileA, a) : 0
     const durB = fileB ? jobDurationSeconds(fileB, b) : 0
     if (durB !== durA) return durB - durA

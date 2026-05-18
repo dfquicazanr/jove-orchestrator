@@ -127,9 +127,6 @@ def parse_gcode_metadata(
         if m:
             length_mm = float(m.group(1)) * 1000.0
 
-    if grams is None and length_mm is not None:
-        grams = round(length_mm * (2.4 / 1000.0), 2)
-
     print_sec = _print_time_seconds_from_text(combined)
     if print_sec is None and tail:
         print_sec = _print_time_seconds_from_text(tail)

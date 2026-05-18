@@ -3,7 +3,8 @@ import type { GCodeFile } from '../types/gcode'
 
 export type GcodeUploadMeta = {
   display_name?: string | null
-  copies: number
+  /** Only used when enqueue is true (legacy direct-to-queue upload). */
+  copies?: number
   required_material: string | null
   required_color: string | null
   material_preset_id: number | null

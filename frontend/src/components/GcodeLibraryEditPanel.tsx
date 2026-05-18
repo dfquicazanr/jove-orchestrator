@@ -19,25 +19,18 @@ export function GcodeLibraryEditPanel({ file, materialPresets, busy, onSaved, on
   const [colorPresetId, setColorPresetId] = useState(
     file.material_color_preset_id != null ? String(file.material_color_preset_id) : '',
   )
-  const [copies, setCopies] = useState(String(file.total_copies_requested))
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     setDisplayName(file.display_name)
     setMaterialPresetId(file.material_preset_id != null ? String(file.material_preset_id) : '')
     setColorPresetId(file.material_color_preset_id != null ? String(file.material_color_preset_id) : '')
-    setCopies(String(file.total_copies_requested))
     setError(null)
   }, [file])
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
-    const n = Number(copies)
-    if (!Number.isInteger(n) || n < 1) {
-      setError('Default copies must be a positive whole number.')
-      return
-    }
     const preset = materialPresetId ? materialPresets.find((p) => String(p.id) === materialPresetId) : null
     try {
       const saved = await apiFetch<GCodeFile>(`/gcode/files/${file.id}`, {
@@ -47,7 +40,6 @@ export function GcodeLibraryEditPanel({ file, materialPresets, busy, onSaved, on
           material_preset_id: materialPresetId ? Number(materialPresetId) : null,
           required_material: preset?.name ?? null,
           material_color_preset_id: colorPresetId ? Number(colorPresetId) : null,
-          total_copies_requested: n,
         },
       })
       onSaved(saved)
@@ -75,10 +67,6 @@ export function GcodeLibraryEditPanel({ file, materialPresets, busy, onSaved, on
         onMaterialPresetIdChange={setMaterialPresetId}
         onColorPresetIdChange={setColorPresetId}
       />
-      <label>
-        Default copies
-        <input type="number" min={1} value={copies} disabled={busy} onChange={(e) => setCopies(e.target.value)} />
-      </label>
       <p className="muted small">
         Saving updates every print kit that includes this file (material and color).
       </p>
@@ -119,9 +107,14 @@ export function GcodeLibraryDetailView({
         <dt>Filament (est.)</dt>
         <dd>
           {file.filament_mass_grams_estimate != null ? `${file.filament_mass_grams_estimate.toFixed(1)} g` : '—'}
+          {file.filament_length_mm != null ? ` · ${(file.filament_length_mm / 1000).toFixed(2)} m` : ''}
+          {file.filament_mass_grams_estimate == null || file.filament_length_mm == null ? (
+            <span className="gcode-metadata-warnings gcode-metadata-warnings--alert">
+              {file.filament_mass_grams_estimate == null ? ' Weight missing from file.' : ''}
+              {file.filament_length_mm == null ? ' Length missing from file.' : ''}
+            </span>
+          ) : null}
         </dd>
-        <dt>Default copies</dt>
-        <dd>{file.total_copies_requested}</dd>
         <dt>Queue jobs</dt>
         <dd>{file.queue_item_count}</dd>
       </dl>

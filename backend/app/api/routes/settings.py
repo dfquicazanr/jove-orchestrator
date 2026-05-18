@@ -94,6 +94,7 @@ def replace_material_preheat_presets(
             row.name = item.name.strip()
             row.hotend_c = item.hotend_c
             row.bed_c = item.bed_c
+            row.default_density_g_cm3 = item.default_density_g_cm3
             row.sort_order = order
             db.add(row)
         else:
@@ -102,6 +103,7 @@ def replace_material_preheat_presets(
                     name=item.name.strip(),
                     hotend_c=item.hotend_c,
                     bed_c=item.bed_c,
+                    default_density_g_cm3=item.default_density_g_cm3,
                     sort_order=order,
                 )
             )

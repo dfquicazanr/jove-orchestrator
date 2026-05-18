@@ -1,26 +1,27 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../api/client'
+import { formatFilamentGrams, formatFilamentMeters, formatPrintTime } from '../lib/formatGcodeMeta'
 import {
-  formatFilamentGrams,
-  formatFilamentKg,
-  formatFilamentMeters,
-  formatPrintTime,
-} from '../lib/formatGcodeMeta'
+  densityForMaterialPreset,
+  filamentMetadataWarnings,
+  reconcileFilament,
+  type FilamentMetadataWarning,
+} from '../lib/filamentEstimate'
 import { parseGcodeFilePreview, type GcodeMetadataPreview } from '../lib/parseGcodeMetadata'
 import { defaultGcodeDisplayName, gcodeFileLabel, gcodeMaterialColorLabel } from '../lib/gcodeLabels'
-import { parseCopies, uploadGcodeFile } from '../lib/gcodeUpload'
+import { uploadGcodeFile } from '../lib/gcodeUpload'
 import type { MaterialPreheatPreset } from '../types/materialPreheat'
 import type { GCodeFile } from '../types/gcode'
 import { ColorPresetSelect } from './ColorPresetSelect'
 import { GcodeAddToQueueModal } from './GcodeAddToQueueModal'
+import { GcodeParseDebugAccordion } from './GcodeParseDebugAccordion'
 import { GcodeLibraryDetailView, GcodeLibraryEditPanel } from './GcodeLibraryEditPanel'
 
 type PendingRow = {
   id: string
   file: File
   displayName: string
-  defaultCopies: string
   materialPresetId: string
   colorPresetId: string
   preview: GcodeMetadataPreview | null
@@ -28,17 +29,59 @@ type PendingRow = {
 }
 
 function emptyPreview(): GcodeMetadataPreview {
-  return { filament_mass_grams: null, filament_length_mm: null, print_time_seconds: null }
+  return {
+    filament_mass_grams: null,
+    filament_length_mm: null,
+    print_time_seconds: null,
+    parseMatches: [],
+  }
 }
 
-function previewFilamentLine(p: GcodeMetadataPreview | null): string {
-  if (!p) return '—'
-  const kg = formatFilamentKg(p.filament_mass_grams)
-  const m = formatFilamentMeters(p.filament_length_mm)
-  if (kg === '—' && m === '—') return '—'
-  if (kg === '—') return m
-  if (m === '—') return kg
-  return `${kg} · ${m}`
+function pendingFilamentPreview(
+  row: PendingRow,
+  materialPresets: MaterialPreheatPreset[],
+): {
+  massGrams: number | null
+  lengthMm: number | null
+  massWarnings: FilamentMetadataWarning[]
+  lengthWarnings: FilamentMetadataWarning[]
+} {
+  const raw = row.preview
+  const density = densityForMaterialPreset(materialPresets, row.materialPresetId)
+  const reconciled = reconcileFilament(
+    raw?.filament_mass_grams,
+    raw?.filament_length_mm,
+    density,
+  )
+  const warnings = filamentMetadataWarnings(raw, reconciled)
+  return {
+    massGrams: reconciled.massGrams,
+    lengthMm: reconciled.lengthMm,
+    massWarnings: warnings.filter((w) => w.id === 'missing-mass' || w.id === 'mass-from-density'),
+    lengthWarnings: warnings.filter((w) => w.id === 'missing-length' || w.id === 'length-from-density'),
+  }
+}
+
+function libraryMassWarnings(file: GCodeFile): FilamentMetadataWarning[] {
+  if (file.filament_mass_grams_estimate != null) return []
+  return [
+    {
+      id: 'missing-mass',
+      message: 'Weight missing',
+      detail: 'Set material density or re-upload with slicer metadata',
+    },
+  ]
+}
+
+function libraryLengthWarnings(file: GCodeFile): FilamentMetadataWarning[] {
+  if (file.filament_length_mm != null) return []
+  return [
+    {
+      id: 'missing-length',
+      message: 'Length missing',
+      detail: 'Set material density or re-upload with slicer metadata',
+    },
+  ]
 }
 
 type Props = {
@@ -60,7 +103,6 @@ export function GcodeLibraryPanel({
   const [rows, setRows] = useState<PendingRow[]>([])
   const [defaultPresetId, setDefaultPresetId] = useState('')
   const [defaultColorPresetId, setDefaultColorPresetId] = useState('')
-  const [defaultCopies, setDefaultCopies] = useState('1')
   const [editingFile, setEditingFile] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -105,13 +147,11 @@ export function GcodeLibraryPanel({
     const defaults = {
       materialPresetId: defaultPresetId,
       colorPresetId: defaultColorPresetId,
-      defaultCopies,
     }
     const added = list.map((f) => ({
       id: crypto.randomUUID(),
       file: f,
       displayName: defaultGcodeDisplayName(f.name),
-      defaultCopies: defaults.defaultCopies,
       materialPresetId: defaults.materialPresetId,
       colorPresetId: defaults.colorPresetId,
       preview: null,
@@ -148,13 +188,6 @@ export function GcodeLibraryPanel({
       setError('Add at least one G-code file.')
       return
     }
-    for (const row of rows) {
-      if (parseCopies(row.defaultCopies) === null) {
-        setError(`Invalid default copies for “${row.file.name}”.`)
-        return
-      }
-    }
-
     setBusy(true)
     setError(null)
     setNotice(null)
@@ -164,13 +197,11 @@ export function GcodeLibraryPanel({
 
     try {
       for (const row of rows) {
-        const copies = parseCopies(row.defaultCopies)!
         const presetId = row.materialPresetId ? Number(row.materialPresetId) : null
         const colorId = row.colorPresetId ? Number(row.colorPresetId) : null
         const preset = presetId != null ? materialPresets.find((p) => p.id === presetId) : null
         try {
           await uploadGcodeFile(row.file, {
-            copies,
             enqueue: false,
             display_name: row.displayName.trim() || defaultGcodeDisplayName(row.file.name),
             material_preset_id: presetId,
@@ -234,7 +265,9 @@ export function GcodeLibraryPanel({
         <form className="gcode-library-upload" onSubmit={(e) => void onUploadSubmit(e)}>
           <p className="muted small">
             Upload saves files to the library only. Filament and print time are read from slicer comments
-            in the file (Cura, Creality Print, PrusaSlicer, etc.) — shown below before and after upload.
+            (Cura, Creality Print, PrusaSlicer, etc.). If weight or length is missing, you will see a warning;
+            assign a material with a default density on{' '}
+            <Link to={materialsHref}>Materials</Link> to estimate the missing value.
           </p>
           <ColorPresetSelect
             materialPresets={materialPresets}
@@ -250,17 +283,6 @@ export function GcodeLibraryPanel({
             }}
             onColorPresetIdChange={setDefaultColorPresetId}
           />
-          <label className="gcode-upload-default-copies">
-            Default copies (metadata)
-            <input
-              type="number"
-              min={1}
-              max={10000}
-              value={defaultCopies}
-              disabled={busy}
-              onChange={(e) => setDefaultCopies(e.target.value)}
-            />
-          </label>
           <div className="queue-upload-toolbar">
             <input
               ref={fileInputRef}
@@ -289,17 +311,18 @@ export function GcodeLibraryPanel({
                 <thead>
                   <tr>
                     <th>Name</th>
-                    <th>Filament (est.)</th>
+                    <th>Weight (est.)</th>
+                    <th>Length (est.)</th>
                     <th>Print time</th>
                     <th>Material</th>
                     <th>Color</th>
-                    <th>Copies</th>
                     <th />
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((row) => (
-                    <tr key={row.id}>
+                    <Fragment key={row.id}>
+                    <tr>
                       <td>
                         <input
                           className="queue-upload-meta"
@@ -314,13 +337,26 @@ export function GcodeLibraryPanel({
                           }
                         />
                       </td>
-                      <td className="gcode-preview-cell muted small">
+                      <td className="gcode-filament-metric-cell">
                         {row.previewLoading ? (
-                          'Reading…'
+                          <span className="muted small">…</span>
                         ) : (
-                          <span title={formatFilamentGrams(row.preview?.filament_mass_grams ?? null)}>
-                            {previewFilamentLine(row.preview)}
-                          </span>
+                          <PendingFilamentMetric
+                            row={row}
+                            materialPresets={materialPresets}
+                            kind="mass"
+                          />
+                        )}
+                      </td>
+                      <td className="gcode-filament-metric-cell">
+                        {row.previewLoading ? (
+                          <span className="muted small">…</span>
+                        ) : (
+                          <PendingFilamentMetric
+                            row={row}
+                            materialPresets={materialPresets}
+                            kind="length"
+                          />
                         )}
                       </td>
                       <td className="gcode-preview-cell">
@@ -371,26 +407,24 @@ export function GcodeLibraryPanel({
                         </select>
                       </td>
                       <td>
-                        <input
-                          type="number"
-                          className="queue-upload-copies"
-                          min={1}
-                          max={10000}
-                          value={row.defaultCopies}
-                          disabled={busy}
-                          onChange={(e) =>
-                            setRows((prev) =>
-                              prev.map((r) => (r.id === row.id ? { ...r, defaultCopies: e.target.value } : r)),
-                            )
-                          }
-                        />
-                      </td>
-                      <td>
-                        <button type="button" className="btn sm secondary" disabled={busy} onClick={() => setRows((p) => p.filter((r) => r.id !== row.id))}>
+                        <button type="button" className="btn sm secondary" disabled={busy} onClick={() => setRows((p) => p.filter((r) => r.id !== row.id))}                        >
                           Remove
                         </button>
                       </td>
                     </tr>
+                    <tr className="gcode-upload-debug-row">
+                      <td colSpan={7}>
+                        <GcodeParseDebugAccordion
+                          preview={row.preview}
+                          loading={row.previewLoading}
+                          densityGcm3={densityForMaterialPreset(materialPresets, row.materialPresetId)}
+                          materialLabel={
+                            materialPresets.find((p) => String(p.id) === row.materialPresetId)?.name
+                          }
+                        />
+                      </td>
+                    </tr>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -414,15 +448,27 @@ export function GcodeLibraryPanel({
         {files && files.length > 0 ? (
           <>
             <div className="gcode-library-list-wrap">
-              <table className="table gcode-library-table">
+              <table
+                className={`table gcode-library-table${isManager ? '' : ' gcode-library-table--viewer'}`}
+              >
+                <colgroup>
+                  <col className="gcode-library-col-file" />
+                  <col className="gcode-library-col-material" />
+                  <col className="gcode-library-col-metric" />
+                  <col className="gcode-library-col-metric" />
+                  <col className="gcode-library-col-time" />
+                  <col className="gcode-library-col-jobs" />
+                  {isManager ? <col className="gcode-library-col-actions" /> : null}
+                </colgroup>
                 <thead>
                   <tr>
-                    <th>File</th>
-                    <th>Material</th>
-                    <th>Filament</th>
-                    <th>Print time</th>
-                    <th>Queue jobs</th>
-                    {isManager ? <th /> : null}
+                    <th className="gcode-library-col-file">File</th>
+                    <th className="gcode-library-col-material">Material</th>
+                    <th className="gcode-library-col-metric">Weight</th>
+                    <th className="gcode-library-col-metric">Length</th>
+                    <th className="gcode-library-col-time">Print time</th>
+                    <th className="gcode-library-col-jobs">Jobs</th>
+                    {isManager ? <th className="gcode-library-col-actions">Actions</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -435,40 +481,49 @@ export function GcodeLibraryPanel({
                         setEditingFile(false)
                       }}
                     >
-                      <td className="gcode-library-filename">
-                        <span title={f.original_filename}>{gcodeFileLabel(f)}</span>
+                      <td className="gcode-library-col-file gcode-library-filename">
+                        <span className="gcode-library-filename-primary" title={f.original_filename}>
+                          {gcodeFileLabel(f)}
+                        </span>
                         {f.display_name !== f.original_filename ? (
                           <span className="muted small gcode-library-filename-sub">{f.original_filename}</span>
                         ) : null}
                       </td>
-                      <td className="muted">{gcodeMaterialColorLabel(f)}</td>
-                      <td>
-                        <span title={formatFilamentGrams(f.filament_mass_grams_estimate)}>
-                          {formatFilamentKg(f.filament_mass_grams_estimate)}
-                        </span>
-                        {' · '}
-                        <span title="Length from slicer comments">{formatFilamentMeters(f.filament_length_mm)}</span>
+                      <td className="gcode-library-col-material muted">{gcodeMaterialColorLabel(f)}</td>
+                      <td className="gcode-library-col-metric gcode-filament-metric-cell">
+                        <FilamentMetricDisplay
+                          value={formatFilamentGrams(f.filament_mass_grams_estimate)}
+                          warnings={libraryMassWarnings(f)}
+                        />
                       </td>
-                      <td>{formatPrintTime(f.print_time_seconds)}</td>
-                      <td>{f.queue_item_count}</td>
+                      <td className="gcode-library-col-metric gcode-filament-metric-cell">
+                        <FilamentMetricDisplay
+                          value={formatFilamentMeters(f.filament_length_mm)}
+                          warnings={libraryLengthWarnings(f)}
+                        />
+                      </td>
+                      <td className="gcode-library-col-time">{formatPrintTime(f.print_time_seconds)}</td>
+                      <td className="gcode-library-col-jobs">{f.queue_item_count}</td>
                       {isManager ? (
-                        <td className="gcode-library-row-actions" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            className="btn sm secondary"
-                            disabled={busy}
-                            onClick={() => setAddQueueFile(f)}
-                          >
-                            Queue…
-                          </button>
-                          <button
-                            type="button"
-                            className="btn sm secondary"
-                            disabled={busy}
-                            onClick={() => void deleteFile(f)}
-                          >
-                            Delete
-                          </button>
+                        <td className="gcode-library-col-actions" onClick={(e) => e.stopPropagation()}>
+                          <div className="gcode-library-row-actions">
+                            <button
+                              type="button"
+                              className="btn sm secondary"
+                              disabled={busy}
+                              onClick={() => setAddQueueFile(f)}
+                            >
+                              Queue
+                            </button>
+                            <button
+                              type="button"
+                              className="btn sm secondary"
+                              disabled={busy}
+                              onClick={() => void deleteFile(f)}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </td>
                       ) : null}
                     </tr>
@@ -518,6 +573,56 @@ export function GcodeLibraryPanel({
       />
     </section>
   )
+}
+
+function FilamentMetricDisplay({
+  value,
+  warnings,
+}: {
+  value: string
+  warnings: FilamentMetadataWarning[]
+}) {
+  const hardWarnings = warnings.filter((w) => w.id.startsWith('missing-'))
+  const info = warnings.filter((w) => !w.id.startsWith('missing-'))
+
+  return (
+    <div className="gcode-filament-metric">
+      <span className="gcode-filament-metric-value">{value}</span>
+      {hardWarnings.length > 0 ? (
+        <ul className="gcode-metadata-warnings gcode-metadata-warnings--alert">
+          {hardWarnings.map((w) => (
+            <li key={w.id} title={w.detail}>
+              {w.message}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {info.length > 0 ? (
+        <ul className="gcode-metadata-warnings">
+          {info.map((w) => (
+            <li key={w.id} title={w.detail}>
+              {w.message}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
+function PendingFilamentMetric({
+  row,
+  materialPresets,
+  kind,
+}: {
+  row: PendingRow
+  materialPresets: MaterialPreheatPreset[]
+  kind: 'mass' | 'length'
+}) {
+  const { massGrams, lengthMm, massWarnings, lengthWarnings } = pendingFilamentPreview(row, materialPresets)
+  const value = kind === 'mass' ? formatFilamentGrams(massGrams) : formatFilamentMeters(lengthMm)
+  const warnings = kind === 'mass' ? massWarnings : lengthWarnings
+  return <FilamentMetricDisplay value={value} warnings={warnings} />
 }
 
 function LibraryHeader({

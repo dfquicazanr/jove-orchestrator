@@ -91,7 +91,7 @@ export function PlannerSessionMaterialFields({
       const col = fileDefaultColor(file)
       onChange({
         ...item,
-        matchAnyColor: false,
+        matchAnyColor: col.id == null,
         materialColorPresetId: col.id,
         materialColorPresetName: col.name,
       })

@@ -11,7 +11,6 @@ export type GCodeFile = {
   material_preset_name: string | null
   material_color_preset_id: number | null
   material_color_preset_name: string | null
-  total_copies_requested: number
   queue_item_count: number
   created_at: string
 }

@@ -1,4 +1,5 @@
 import type { GCodeFile } from '../types/gcode'
+import type { MaterialPreheatPreset } from '../types/materialPreheat'
 import type { PlannerSessionItem } from '../types/plannerSession'
 
 function norm(s: string | null | undefined): string {
@@ -50,20 +51,45 @@ export function fileDefaultColor(file: GCodeFile): { id: number | null; name: st
   }
 }
 
+/** Default color for a material preset (is_default, else first in list). */
+export function defaultColorForMaterialPreset(
+  materials: MaterialPreheatPreset[],
+  materialPresetId: number | null,
+): { id: number | null; name: string | null } {
+  if (materialPresetId == null) return { id: null, name: null }
+  const preset = materials.find((m) => m.id === materialPresetId)
+  const colors = preset?.color_presets ?? []
+  if (colors.length === 0) return { id: null, name: null }
+  const pick = colors.find((c) => c.is_default) ?? colors[0]
+  return { id: pick.id, name: pick.name }
+}
+
+/** When no color preset is set on the row, accept any loaded filament color. */
+export function resolveSessionItemColor(item: PlannerSessionItem): PlannerSessionItem {
+  if (item.matchAnyColor || item.materialColorPresetId != null) return item
+  return {
+    ...item,
+    matchAnyColor: true,
+    materialColorPresetId: null,
+    materialColorPresetName: null,
+  }
+}
+
 export function applyFileMaterialDefaults(
   item: PlannerSessionItem,
   file: GCodeFile,
 ): PlannerSessionItem {
   const mat = fileDefaultMaterial(file)
   const col = fileDefaultColor(file)
+  const hasFileColor = col.id != null
   return {
     ...item,
     matchAnyMaterial: false,
-    matchAnyColor: false,
+    matchAnyColor: !hasFileColor,
     materialPresetId: mat.id,
     materialPresetName: mat.name,
-    materialColorPresetId: col.id,
-    materialColorPresetName: col.name,
+    materialColorPresetId: hasFileColor ? col.id : null,
+    materialColorPresetName: hasFileColor ? col.name : null,
   }
 }
 

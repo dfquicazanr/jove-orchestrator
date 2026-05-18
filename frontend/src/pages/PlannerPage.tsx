@@ -9,7 +9,11 @@ import { parseSafetyMarginPercent, percentToWasteFactor } from '../lib/filamentS
 import { assignPlannerSession } from '../lib/plannerAssign'
 import { FarmMaterialWarning } from '../components/FarmMaterialWarning'
 import { incompatibilityReason } from '../lib/plannerCompatibility'
-import { applyFileMaterialDefaults, normalizePlannerSessionItem } from '../lib/plannerRequirements'
+import {
+  applyFileMaterialDefaults,
+  normalizePlannerSessionItem,
+  resolveSessionItemColor,
+} from '../lib/plannerRequirements'
 import { consumePlannerImport } from '../lib/plannerSessionStorage'
 import { PlannerSessionMaterialFields } from '../components/PlannerSessionMaterialFields'
 import { buildPrinterSchedule, type ScheduleJobInput } from '../lib/printerSchedule'
@@ -99,6 +103,14 @@ export function PlannerPage() {
       setPrinters(printerData)
       setMaterials(matData)
       if (!addFileId && fileData[0]) setAddFileId(String(fileData[0].id))
+      const imported = consumePlannerImport()
+      if (imported.length > 0) {
+        setSession((s) => [
+          ...s,
+          ...imported.map((i) => resolveSessionItemColor(i)),
+        ])
+        setNotice(`Added ${imported.length} job${imported.length === 1 ? '' : 's'} from kit.`)
+      }
     } catch {
       setFiles([])
       setKits([])
@@ -108,11 +120,6 @@ export function PlannerPage() {
 
   useEffect(() => {
     void loadMeta()
-    const imported = consumePlannerImport()
-    if (imported.length > 0) {
-      setSession((s) => [...s, ...imported])
-      setNotice(`Added ${imported.length} job${imported.length === 1 ? '' : 's'} from kit.`)
-    }
   }, [loadMeta])
 
   function addFileToSession() {
@@ -148,23 +155,25 @@ export function PlannerPage() {
         const file = filesById.get(line.gcode_file_id)
         for (let q = 0; q < line.quantity; q++) {
           added.push(
-            normalizePlannerSessionItem({
-              sessionId: newSessionId(),
-              gcodeFileId: line.gcode_file_id,
-              originalFilename: line.gcode_filename,
-              displayName: line.gcode_display_name || line.gcode_filename,
-              printTimeSeconds: file?.print_time_seconds ?? null,
-              priority: 0,
-              materialPresetId: line.material_preset_id,
-              materialPresetName: line.material_preset_name,
-              materialColorPresetId: line.material_color_preset_id,
-              materialColorPresetName: line.material_color_preset_name,
-              matchAnyMaterial: false,
-              matchAnyColor: false,
-              printKitId: kit.id,
-              kitRunIndex: run,
-              copyLabel: `${run + 1}.${q + 1}`,
-            }),
+            resolveSessionItemColor(
+              normalizePlannerSessionItem({
+                sessionId: newSessionId(),
+                gcodeFileId: line.gcode_file_id,
+                originalFilename: line.gcode_filename,
+                displayName: line.gcode_display_name || line.gcode_filename,
+                printTimeSeconds: file?.print_time_seconds ?? null,
+                priority: 0,
+                materialPresetId: line.material_preset_id,
+                materialPresetName: line.material_preset_name,
+                materialColorPresetId: line.material_color_preset_id,
+                materialColorPresetName: line.material_color_preset_name,
+                matchAnyMaterial: false,
+                matchAnyColor: false,
+                printKitId: kit.id,
+                kitRunIndex: run,
+                copyLabel: `${run + 1}.${q + 1}`,
+              }),
+            ),
           )
         }
       }
@@ -175,6 +184,22 @@ export function PlannerPage() {
   function removeSessionItem(sessionId: string) {
     setPreviewReady(false)
     setSession((s) => s.filter((i) => i.sessionId !== sessionId))
+  }
+
+  function duplicateSessionItem(sessionId: string) {
+    setPreviewReady(false)
+    setSession((s) => {
+      const idx = s.findIndex((i) => i.sessionId === sessionId)
+      if (idx < 0) return s
+      const source = s[idx]
+      const duplicate: PlannerSessionItem = {
+        ...source,
+        sessionId: newSessionId(),
+      }
+      const next = [...s]
+      next.splice(idx + 1, 0, duplicate)
+      return next
+    })
   }
 
   function clearSession() {
@@ -449,10 +474,19 @@ export function PlannerPage() {
                         : '—'}
                     </td>
                     <td>{previewReady ? (printer?.name ?? '— Unassigned —') : '—'}</td>
-                    <td>
+                    <td className="planner-session-row-actions">
                       <button
                         type="button"
-                        className="btn subtle small"
+                        className="btn subtle sm"
+                        disabled={optimizing || committing}
+                        onClick={() => duplicateSessionItem(item.sessionId)}
+                      >
+                        Duplicate
+                      </button>
+                      <button
+                        type="button"
+                        className="btn subtle sm"
+                        disabled={optimizing || committing}
                         onClick={() => removeSessionItem(item.sessionId)}
                       >
                         Remove

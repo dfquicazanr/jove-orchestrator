@@ -9,11 +9,13 @@ from sqlalchemy.orm import Session, joinedload
 from app.api.deps import get_db, require_manager, require_viewer_or_manager
 from app.config import get_settings
 from app.models.gcode_file import GCodeFile
+from app.models.material_preheat_preset import MaterialPreheatPreset
 from app.models.print_kit import PrintKitItem
 from app.models.print_queue import PrintQueueItem, PrintQueueStatus
 from app.models.user import User
 from app.schemas.gcode import GCodeFileOut, GCodeFilePatch, GCodeUploadMetadata
 from app.services.gcode_labels import default_display_name
+from app.services.filament_estimate import reconcile_filament
 from app.services.gcode_parse import parse_gcode_metadata
 from app.services.material_fields import resolve_color_fields, resolve_material_fields
 
@@ -39,9 +41,55 @@ def _gcode_file_out(gf: GCodeFile, queue_item_count: int | None = None) -> GCode
         material_preset_name=preset.name if preset else None,
         material_color_preset_id=gf.material_color_preset_id,
         material_color_preset_name=color.name if color else None,
-        total_copies_requested=gf.total_copies_requested,
         queue_item_count=count,
         created_at=gf.created_at,
+    )
+
+
+def _material_density(db: Session, material_preset_id: int | None) -> float | None:
+    if material_preset_id is None:
+        return None
+    preset = db.get(MaterialPreheatPreset, material_preset_id)
+    if preset is None or preset.default_density_g_cm3 is None:
+        return None
+    return float(preset.default_density_g_cm3)
+
+
+def _read_gcode_metadata_from_path(path: Path) -> tuple[str, str | None]:
+    size = path.stat().st_size
+    with path.open("r", encoding="utf-8", errors="ignore") as f:
+        head = f.read(512_000)
+        tail = ""
+        if size > 65536:
+            f.seek(max(0, size - 65536))
+            tail = f.read(65536)
+    return head, tail or None
+
+
+def _apply_filament_reconcile(
+    gf: GCodeFile,
+    db: Session,
+    *,
+    parsed_mass: float | None,
+    parsed_length: float | None,
+) -> None:
+    density = _material_density(db, gf.material_preset_id)
+    reconciled = reconcile_filament(parsed_mass, parsed_length, density)
+    gf.filament_mass_grams_estimate = reconciled.mass_grams
+    gf.filament_length_mm = reconciled.length_mm
+
+
+def _reparse_and_reconcile_stored_gcode(gf: GCodeFile, db: Session) -> None:
+    path = Path(gf.stored_path)
+    if not path.is_file():
+        return
+    head, tail = _read_gcode_metadata_from_path(path)
+    parsed = parse_gcode_metadata(head, tail=tail)
+    _apply_filament_reconcile(
+        gf,
+        db,
+        parsed_mass=parsed.filament_mass_grams,
+        parsed_length=parsed.filament_length_mm,
     )
 
 
@@ -165,6 +213,9 @@ def patch_gcode_file(
         gf.material_color_preset_id = cid
         gf.required_color = cname
 
+    if "material_preset_id" in data:
+        _reparse_and_reconcile_stored_gcode(gf, db)
+
     for k in ("display_name", "material_preset_id", "required_material", "material_color_preset_id", "required_color"):
         data.pop(k, None)
 
@@ -212,15 +263,8 @@ async def upload_gcode(
             dest_path.unlink(missing_ok=True)
         raise
 
-    head = ""
-    tail = ""
-    with dest_path.open("r", encoding="utf-8", errors="ignore") as f:
-        head = f.read(512_000)
-        if size > 65536:
-            f.seek(max(0, size - 65536))
-            tail = f.read(65536)
-
-    parsed = parse_gcode_metadata(head, tail=tail or None)
+    head, tail = _read_gcode_metadata_from_path(dest_path)
+    parsed = parse_gcode_metadata(head, tail=tail)
     preset_id, mat_name = resolve_material_fields(
         db,
         material_preset_id=meta.material_preset_id,
@@ -239,17 +283,22 @@ async def upload_gcode(
         original_filename=orig_name,
         display_name=display,
         uploaded_by_id=user.id,
-        filament_mass_grams_estimate=parsed.filament_mass_grams,
-        filament_length_mm=parsed.filament_length_mm,
+        filament_mass_grams_estimate=None,
+        filament_length_mm=None,
         print_time_seconds=parsed.print_time_seconds,
         required_material=mat_name,
         required_color=color_name,
         material_preset_id=preset_id,
         material_color_preset_id=color_id,
-        total_copies_requested=meta.copies,
     )
     db.add(gf)
     db.flush()
+    _apply_filament_reconcile(
+        gf,
+        db,
+        parsed_mass=parsed.filament_mass_grams,
+        parsed_length=parsed.filament_length_mm,
+    )
 
     if meta.enqueue:
         for i in range(meta.copies):

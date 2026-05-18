@@ -44,6 +44,7 @@ class MaterialPreheatPresetOut(BaseModel):
     name: str
     hotend_c: float
     bed_c: float
+    default_density_g_cm3: float | None = None
     sort_order: int
     color_presets: list[MaterialColorPresetOut] = Field(default_factory=list)
 
@@ -55,6 +56,7 @@ class MaterialPreheatPresetIn(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     hotend_c: float = Field(ge=0, le=400)
     bed_c: float = Field(ge=0, le=150)
+    default_density_g_cm3: float | None = Field(default=None, gt=0, le=10)
     sort_order: int = Field(default=0, ge=0, le=10_000)
 
 

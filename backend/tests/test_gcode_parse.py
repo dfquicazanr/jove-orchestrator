@@ -22,7 +22,7 @@ def test_creality_cura_filament_meters_and_fractional_time():
     meta = parse_gcode_metadata(g)
     assert meta.filament_length_mm == pytest.approx(6210.0)
     assert meta.print_time_seconds == 3709
-    assert meta.filament_mass_grams == pytest.approx(14.9, rel=0.1)
+    assert meta.filament_mass_grams is None
 
 
 def test_prusa_total_filament_mm_and_estimated_time():

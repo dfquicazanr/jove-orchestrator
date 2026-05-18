@@ -1616,7 +1616,16 @@ dd {
 
 .queue-upload-table {
   width: 100%;
-  min-width: 520px;
+  min-width: 640px;
+}
+
+.queue-upload-table th,
+.queue-upload-table td {
+  vertical-align: top;
+}
+
+.queue-upload-table .gcode-filament-metric-cell {
+  max-width: 5.5rem;
 }
 
 .queue-upload-filename {
@@ -1814,7 +1823,22 @@ dd {
 }
 
 .gcode-library-list-wrap {
+  width: 100%;
+  min-width: 0;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.gcode-library-table {
+  width: 100%;
+  min-width: 36rem;
+  table-layout: fixed;
+}
+
+.gcode-library-table th,
+.gcode-library-table td {
+  padding: 0.5rem 0.6rem;
+  vertical-align: middle;
 }
 
 .gcode-library-table tbody tr {
@@ -1825,18 +1849,105 @@ dd {
   background: rgba(138, 180, 255, 0.08);
 }
 
-.gcode-library-filename {
-  max-width: 14rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* File column (colgroup col with no width) absorbs remaining table width. */
+.gcode-library-table col.gcode-library-col-material {
+  width: 4.5rem;
+}
+
+.gcode-library-table col.gcode-library-col-metric {
+  width: 5rem;
+}
+
+.gcode-library-table col.gcode-library-col-time {
+  width: 5.75rem;
+}
+
+.gcode-library-table col.gcode-library-col-jobs {
+  width: 3.5rem;
+}
+
+.gcode-library-table col.gcode-library-col-actions {
+  width: 12.5rem;
+}
+
+.gcode-library-table--viewer col.gcode-library-col-jobs {
+  width: 4rem;
+}
+
+.gcode-library-col-file {
+  vertical-align: top;
+}
+
+.gcode-library-col-material {
   white-space: nowrap;
+}
+
+.gcode-library-col-metric {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.gcode-library-col-time {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.gcode-library-col-jobs {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.gcode-library-col-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.gcode-library-table .gcode-filament-metric-cell {
+  max-width: none;
+}
+
+.gcode-library-table .gcode-filament-metric {
+  align-items: flex-end;
+}
+
+.gcode-library-table .gcode-metadata-warnings {
+  text-align: right;
+}
+
+.gcode-library-filename {
+  display: block;
+  line-height: 1.35;
+}
+
+.gcode-library-filename-primary {
+  display: block;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.gcode-library-filename-sub {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.75rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .gcode-library-row-actions {
   display: flex;
+  flex-flow: row nowrap;
   gap: 0.35rem;
-  flex-wrap: wrap;
-  white-space: nowrap;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.gcode-library-row-actions .btn {
+  flex: 0 0 auto;
 }
 
 .gcode-library-detail {
@@ -2049,16 +2160,6 @@ dd {
 
 .gcode-upload-default-copies input {
   max-width: 8rem;
-}
-
-.gcode-library-filename {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-.gcode-library-filename-sub {
-  font-size: 0.75rem;
 }
 
 .gcode-library-edit label {
@@ -2413,4 +2514,160 @@ dd {
 
 .planner-session-table td {
   vertical-align: top;
+}
+
+.planner-session-row-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.planner-session-row-actions .btn + .btn {
+  margin-left: 0.35rem;
+}
+
+.gcode-filament-metric-cell {
+  max-width: 6.5rem;
+  vertical-align: top;
+}
+
+.gcode-filament-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.gcode-filament-metric-value {
+  white-space: nowrap;
+}
+
+.gcode-metadata-warnings {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.68rem;
+  line-height: 1.25;
+  color: #c9a227;
+}
+
+.gcode-metadata-warnings li {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.gcode-metadata-warnings--alert {
+  color: #e8a87a;
+}
+
+.gcode-metadata-warnings li + li {
+  margin-top: 0.15rem;
+}
+
+.gcode-upload-debug-row td {
+  padding-top: 0;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid #243044;
+  background: rgba(8, 12, 20, 0.6);
+}
+
+.gcode-parse-debug {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+}
+
+.gcode-parse-debug-summary {
+  cursor: pointer;
+  color: #8ab4ff;
+  font-weight: 600;
+  user-select: none;
+}
+
+.gcode-parse-debug-summary:hover {
+  text-decoration: underline;
+}
+
+.gcode-parse-debug-body {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid #243044;
+  background: #0c1018;
+}
+
+.gcode-parse-debug-field + .gcode-parse-debug-field {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #1a2433;
+}
+
+.gcode-parse-debug-field-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  align-items: baseline;
+  margin-bottom: 0.35rem;
+}
+
+.gcode-parse-debug-lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gcode-parse-debug-line {
+  padding: 0.4rem 0.5rem;
+  border-radius: 4px;
+  background: rgba(61, 139, 253, 0.08);
+  border-left: 3px solid #3d8bfd;
+}
+
+.gcode-parse-debug-line + .gcode-parse-debug-line {
+  margin-top: 0.35rem;
+}
+
+.gcode-parse-debug-line--derived {
+  border-left-color: #c9a227;
+  background: rgba(201, 162, 39, 0.08);
+}
+
+.gcode-parse-debug-loc {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #9aa7bd;
+}
+
+.gcode-parse-debug-region {
+  font-weight: 500;
+  color: #6b7a94;
+  text-transform: lowercase;
+}
+
+.gcode-parse-debug-pattern {
+  font-size: 0.72rem;
+  color: #e8b86d;
+}
+
+.gcode-parse-debug-value {
+  color: #7dcea0;
+  font-size: 0.72rem;
+}
+
+.gcode-parse-debug-text {
+  margin: 0.35rem 0 0;
+  padding: 0.35rem 0.45rem;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #c9d6ea;
+  background: #101824;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.gcode-parse-debug-empty {
+  margin: 0;
+  font-style: italic;
 }

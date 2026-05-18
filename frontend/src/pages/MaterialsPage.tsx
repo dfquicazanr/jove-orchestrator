@@ -9,6 +9,7 @@ type MaterialRow = {
   name: string
   hotend_c: string
   bed_c: string
+  default_density_g_cm3: string
 }
 
 type ColorRow = {
@@ -25,6 +26,10 @@ function toMaterialRows(presets: MaterialPreheatPreset[]): MaterialRow[] {
     name: p.name,
     hotend_c: String(p.hotend_c),
     bed_c: String(p.bed_c),
+    default_density_g_cm3:
+      p.default_density_g_cm3 != null && p.default_density_g_cm3 > 0
+        ? String(p.default_density_g_cm3)
+        : '',
   }))
 }
 
@@ -47,7 +52,7 @@ function buildColorMap(presets: MaterialPreheatPreset[]): Record<string, ColorRo
 }
 
 function newMaterialRow(): MaterialRow {
-  return { key: `new-${crypto.randomUUID()}`, name: '', hotend_c: '200', bed_c: '60' }
+  return { key: `new-${crypto.randomUUID()}`, name: '', hotend_c: '200', bed_c: '60', default_density_g_cm3: '' }
 }
 
 function newColorRow(): ColorRow {
@@ -114,6 +119,7 @@ export function MaterialsPage() {
       name: string
       hotend_c: number
       bed_c: number
+      default_density_g_cm3: number | null
       sort_order: number
     }[] = []
     for (let i = 0; i < materialRows.length; i++) {
@@ -133,12 +139,23 @@ export function MaterialsPage() {
         setError(`Material ${i + 1}: bed must be 0–150°C.`)
         return
       }
+      const densityRaw = row.default_density_g_cm3.trim()
+      let default_density_g_cm3: number | null = null
+      if (densityRaw !== '') {
+        const density = Number(densityRaw)
+        if (Number.isNaN(density) || density <= 0 || density > 10) {
+          setError(`Material ${i + 1}: density must be between 0 and 10 g/cm³, or leave blank.`)
+          return
+        }
+        default_density_g_cm3 = density
+      }
       const id = materialRowId(row)
       parsed.push({
         ...(id != null ? { id } : {}),
         name,
         hotend_c: hotend,
         bed_c: bed,
+        default_density_g_cm3,
         sort_order: i,
       })
     }
@@ -228,8 +245,9 @@ export function MaterialsPage() {
         <div>
           <h1>Materials</h1>
           <p className="muted">
-            Each material has its own colors (PLA Red and ASA Red are separate). Expand a material to add
-            colors; preheat temps are used on the farm and for tagging G-code.
+            Each material has its own colors (PLA Red and ASA Red are separate). Set a default density
+            (g/cm³) to estimate missing filament weight or length from Cura G-code. Typical PLA is about
+            1.24.
           </p>
         </div>
       </div>
@@ -305,6 +323,25 @@ export function MaterialsPage() {
                             const bed_c = e.target.value
                             setMaterialRows((prev) =>
                               prev.map((r, i) => (i === idx ? { ...r, bed_c } : r)),
+                            )
+                          }}
+                        />
+                      </label>
+                      <label>
+                        <span className="material-field-label">Density (g/cm³)</span>
+                        <input
+                          type="number"
+                          min={0.01}
+                          max={10}
+                          step={0.01}
+                          placeholder="e.g. 1.24"
+                          value={row.default_density_g_cm3}
+                          disabled={!isManager || busy}
+                          title="Used to estimate missing filament weight or length in the library"
+                          onChange={(e) => {
+                            const default_density_g_cm3 = e.target.value
+                            setMaterialRows((prev) =>
+                              prev.map((r, i) => (i === idx ? { ...r, default_density_g_cm3 } : r)),
                             )
                           }}
                         />
