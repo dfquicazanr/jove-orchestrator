@@ -22,7 +22,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://jove:jove@db:5432/jove
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080}
       HOME_ASSISTANT_BASE_URL: ${HOME_ASSISTANT_BASE_URL:-}
       HOME_ASSISTANT_TOKEN: ${HOME_ASSISTANT_TOKEN:-}
       GCODE_UPLOAD_DIR: /app/data/uploads
@@ -35,6 +35,17 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - api
 
 volumes:
   jove_pgdata:

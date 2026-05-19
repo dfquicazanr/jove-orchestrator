@@ -92,15 +92,18 @@ docker compose build api && docker compose up -d api
 
    Open the Vite URL (default `http://localhost:5173`). Copy `frontend/.env.example` to `frontend/.env` and set `VITE_API_URL` if the API is not at `http://localhost:8000`.
 
-## Docker (API + Postgres)
+## Docker (API + Postgres + web UI)
 
-From repo root (set `JWT_SECRET_KEY` in production):
+From repo root, copy `.env.example` to `.env` and set `JWT_SECRET_KEY` (and `VITE_API_URL` if the API URL differs from `http://localhost:8000`):
 
 ```bash
 docker compose up --build
 ```
 
-API: `http://localhost:8000` · OpenAPI: `http://localhost:8000/docs`
+- **Web UI:** `http://localhost:8080` (override with `WEB_PORT` in `.env`)
+- **API:** `http://localhost:8000` · OpenAPI: `http://localhost:8000/docs`
+
+On a remote host, set `VITE_API_URL` to the URL browsers will use to reach the API (e.g. `http://192.168.1.10:8000`), rebuild the web image, and add that origin to `CORS_ORIGINS`.
 
 Printers on **Tailscale MagicDNS** from inside the API container:
 

@@ -1,0 +1,17 @@
+.git
+.gitignore
+**/.env
+**/.env.*
+!**/.env.example
+**/node_modules
+frontend/dist
+backend/.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+.cursor
+agent-transcripts
+**/*.md
+!backend/README.md
+docs
