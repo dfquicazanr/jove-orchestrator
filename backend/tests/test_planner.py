@@ -40,12 +40,13 @@ def _job(
     )
 
 
-def _item(iid: int, *, priority: int = 0, material_preset_id=None):
+def _item(iid: int, *, priority: int = 0, material_preset_id=None, print_kit_id=None):
     return SimpleNamespace(
         id=iid,
         priority=priority,
         material_preset_id=material_preset_id,
         material_preset=None,
+        print_kit_id=print_kit_id,
         gcode_file=_job(),
     )
 

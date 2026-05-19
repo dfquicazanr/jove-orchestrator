@@ -17,7 +17,7 @@ This file is for **Cursor agents** (or other contributors) picking up work on th
 | `backend/app/` | FastAPI app: `main.py`, `config.py`, `api/routes/`, `models/`, `services/`, `schemas/` |
 | `backend/alembic/` | Migrations `001`–`008` (see `docs/infrastructure.md`) |
 | `docs/` | `infrastructure.md`, doc index |
-| `backend/tests/` | `pytest` (Moonraker helpers, controls, gcode parse, etc.) |
+| `backend/tests/` | `./scripts/test.sh` from `backend/` (uses `.venv`, not system `python3`) |
 | `backend/scripts/seed_printers.py` | Optional demo printers (RFC 5737 IPs) |
 | `frontend/src/` | Pages, components, hooks, `api/client`, types |
 | `.env.example`, `frontend/.env.example` | Env templates |
@@ -52,6 +52,8 @@ The API container runs **`alembic upgrade head`** on start (see `backend/Dockerf
 ### CI expectations
 
 `.github/workflows/ci.yml`: **Ruff** + **pytest** in `backend/`, **`npm ci` + `npm run build`** in `frontend/`. Python **3.12** in CI.
+
+**Local / agent tests:** `cd backend && ./scripts/test.sh` (or `backend/.venv/bin/python -m pytest`). Do not use bare `python` / `python3` on the host — pytest is only installed in the project venv.
 
 ---
 

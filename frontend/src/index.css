@@ -732,6 +732,92 @@ dd {
   height: 100%;
 }
 
+.printer-card--drop-target {
+  outline: 2px dashed #4a90d9;
+  outline-offset: 2px;
+  background: rgba(74, 144, 217, 0.08);
+}
+
+.printer-card--drop-target::after {
+  content: 'Drop G-code to print';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  border-radius: inherit;
+  background: rgba(15, 20, 28, 0.72);
+  color: #b3d4ff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: center;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.drop-print-warnings {
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  list-style: none;
+  border-radius: 8px;
+  background: rgba(232, 184, 109, 0.1);
+  border: 1px solid rgba(232, 184, 109, 0.35);
+  font-size: 0.85rem;
+  color: #e8c98a;
+}
+
+.drop-print-warnings li + li {
+  margin-top: 0.35rem;
+}
+
+.drop-print-warning--strong {
+  color: #ffb74d;
+  font-weight: 600;
+}
+
+.drop-print-summary {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(7rem, auto) 1fr;
+  gap: 0.35rem 0.75rem;
+  font-size: 0.88rem;
+}
+
+.drop-print-summary > div {
+  display: contents;
+}
+
+.drop-print-summary dt {
+  color: #9aa7bd;
+  margin: 0;
+}
+
+.drop-print-summary dd {
+  margin: 0;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.drop-print-after--low {
+  color: #ffb74d;
+  font-weight: 600;
+}
+
+.drop-print-modal {
+  max-width: 28rem;
+}
+
+.drop-print-progress {
+  margin: 0;
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  background: rgba(74, 144, 217, 0.12);
+  border: 1px solid rgba(74, 144, 217, 0.35);
+  font-size: 0.85rem;
+  color: #b3d4ff;
+}
+
 .printer-card-head {
   display: flex;
   align-items: flex-start;
@@ -2619,6 +2705,106 @@ dd {
   border: 1px solid rgba(232, 184, 109, 0.35);
   color: #e8c98a;
   font-size: 0.9rem;
+}
+
+.farm-live-debug {
+  margin: 0 0 1rem;
+  font-size: 0.8rem;
+}
+
+.farm-live-debug-summary {
+  cursor: pointer;
+  color: #8ab4ff;
+  font-weight: 600;
+  user-select: none;
+}
+
+.farm-live-debug-summary:hover {
+  text-decoration: underline;
+}
+
+.farm-live-debug-body {
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #243044;
+  background: #0c1018;
+}
+
+.farm-live-debug-stream {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0.75rem 0;
+}
+
+.farm-live-debug-stream div {
+  margin: 0;
+}
+
+.farm-live-debug-stream dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #7a8aa0;
+  margin: 0 0 0.15rem;
+}
+
+.farm-live-debug-stream dd {
+  margin: 0;
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+}
+
+.farm-live-debug-ok {
+  color: #6dd4a0;
+}
+
+.farm-live-debug-warn {
+  color: #e8b86d;
+}
+
+.farm-live-debug-stale {
+  color: #e8b86d;
+  font-size: 0.72rem;
+}
+
+.farm-live-debug-table-wrap {
+  overflow-x: auto;
+  margin-top: 0.5rem;
+}
+
+.farm-live-debug-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.farm-live-debug-table th,
+.farm-live-debug-table td {
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid #1a2433;
+  text-align: left;
+  vertical-align: top;
+}
+
+.farm-live-debug-table th {
+  color: #8a9bb0;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.farm-live-debug-temps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-family: ui-monospace, monospace;
+  white-space: nowrap;
+}
+
+.farm-live-debug-ts {
+  font-family: ui-monospace, monospace;
+  white-space: nowrap;
 }
 
 .printer-card--missing-material .filament-zone {

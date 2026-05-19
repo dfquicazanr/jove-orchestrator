@@ -75,6 +75,13 @@ docker compose build api && docker compose up -d api
 
    On Debian/Ubuntu you may need `sudo apt install python3.12-venv` (or your distro’s equivalent) before `python -m venv`.
 
+   **Tests** (uses `backend/.venv`; creates it on first run if missing):
+
+   ```bash
+   cd backend
+   ./scripts/test.sh
+   ```
+
 4. **Frontend** — Node **20.19+** or **22.12+** matches current upstream Vite; this repo pins **Vite 5** so **Node 20.18** can still run `npm run build`.
 
    ```bash

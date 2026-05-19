@@ -33,6 +33,8 @@ function emptyPreview(): GcodeMetadataPreview {
     filament_mass_grams: null,
     filament_length_mm: null,
     print_time_seconds: null,
+    material_comment: null,
+    color_comment: null,
     parseMatches: [],
   }
 }

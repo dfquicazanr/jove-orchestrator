@@ -19,6 +19,10 @@ export type GcodeMetadataPreview = {
   filament_mass_grams: number | null
   filament_length_mm: number | null
   print_time_seconds: number | null
+  /** Slicer comment, e.g. Prusa ``; filament_type = PLA`` */
+  material_comment: string | null
+  /** Slicer comment for filament colour/name when present */
+  color_comment: string | null
   parseMatches: GcodeParseLineMatch[]
 }
 
@@ -59,6 +63,10 @@ const TIME_PATTERNS: PatternDef[] = [
   { label: 'build time:', re: BUILD_TIME },
   { label: 'total estimated time:', re: TOTAL_EST_TIME },
 ]
+
+const FILAMENT_TYPE = /;\s*filament[_\s]*type\s*[=:]\s*(\S+)/i
+const FILAMENT_TYPE_CURA = /;\s*filament\s+type:\s*(.+?)\s*$/i
+const FILAMENT_COLOR = /;\s*filament[_\s]*colou?r\s*[=:]\s*(.+?)\s*$/i
 
 function splitLines(region: 'head' | 'tail', chunk: string): LineRef[] {
   if (!chunk) return []
@@ -158,10 +166,26 @@ export function parseGcodeMetadataText(head: string, tail?: string): GcodeMetada
     parseMatches.push(timeHit.match)
   }
 
+  let materialComment: string | null = null
+  let colorComment: string | null = null
+  for (const line of lines) {
+    if (!materialComment) {
+      const m = FILAMENT_TYPE.exec(line.text) ?? FILAMENT_TYPE_CURA.exec(line.text)
+      if (m) materialComment = m[1].trim().replace(/^["']|["']$/g, '')
+    }
+    if (!colorComment) {
+      const c = FILAMENT_COLOR.exec(line.text)
+      if (c) colorComment = c[1].trim().replace(/^["']|["']$/g, '')
+    }
+    if (materialComment && colorComment) break
+  }
+
   return {
     filament_mass_grams: grams,
     filament_length_mm: lengthMm,
     print_time_seconds: printSec,
+    material_comment: materialComment,
+    color_comment: colorComment,
     parseMatches,
   }
 }

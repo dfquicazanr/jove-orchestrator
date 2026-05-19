@@ -75,6 +75,7 @@ class PrinterPrintGcodeResult(BaseModel):
     moonraker_path: str | None = None
     print_started: bool = False
     print_queued: bool = False
+    remaining_filament_grams: float | None = None
 
 
 class PrinterControlResult(BaseModel):

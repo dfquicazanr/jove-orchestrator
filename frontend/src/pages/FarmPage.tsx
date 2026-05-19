@@ -6,13 +6,20 @@ import { AddPrinterCard } from '../components/AddPrinterCard'
 import { PrinterConnectionModal } from '../components/PrinterConnectionModal'
 import { PrinterFilamentModal } from '../components/PrinterFilamentModal'
 import { FarmMaterialWarning } from '../components/FarmMaterialWarning'
+import { FarmLiveDebugPanel } from '../components/FarmLiveDebugPanel'
 import { PrinterFarmCard } from '../components/PrinterFarmCard'
 import { FarmBulkConfirmModal, type FarmBulkConfirmState } from '../components/FarmBulkConfirmModal'
 import { HaPrinterPowerOffModal } from '../components/HaPrinterPowerOffModal'
 import { SendGcodeModal } from '../components/SendGcodeModal'
+import { DropPrintConfirmModal } from '../components/DropPrintConfirmModal'
+import {
+  prepareDropPrint,
+  rejectReasonBeforeDropPrint,
+  type DropPrintPreview,
+} from '../lib/dropPrintPrepare'
 import { FARM_SUCCESS_TOAST_MS, useAutoDismiss } from '../hooks/useAutoDismiss'
 import { usePrinterStatusStream, type PrinterLiveUpdate } from '../hooks/usePrinterStatusStream'
-import { applyPrinterLiveUpdates } from '../lib/mergePrinterLive'
+import { applyPrinterLiveUpdates, isPrinterMoonrakerLive } from '../lib/mergePrinterLive'
 import { loadFarmViewMode, saveFarmViewMode, type FarmViewMode } from '../lib/farmViewMode'
 import { mockPrintersMode } from '../lib/mockPrintersMode'
 import type { PrinterControlAction } from '../lib/printerControlActions'
@@ -65,8 +72,10 @@ export function FarmPage() {
   const [bulkConfirm, setBulkConfirm] = useState<FarmBulkConfirmState | null>(null)
   /** Home Assistant mains power-off — gated behind confirmation modal. */
   const [haPowerOffConfirmPrinter, setHaPowerOffConfirmPrinter] = useState<Printer | null>(null)
+  const [dropPrintPreview, setDropPrintPreview] = useState<DropPrintPreview | null>(null)
+  const [dropPrintBusy, setDropPrintBusy] = useState(false)
   const useMocks = mockPrintersMode()
-  const liveStatus = usePrinterStatusStream(!useMocks)
+  const { live: liveStatus, meta: liveStreamMeta } = usePrinterStatusStream(!useMocks)
   const controlFeedbackTimers = useRef<Record<number, number>>({})
 
   const dismissActionNotice = useCallback(() => setActionNotice(null), [])
@@ -155,6 +164,30 @@ export function FarmPage() {
   useEffect(() => {
     void loadPrinters()
   }, [loadPrinters])
+
+  /** Refresh DB when Moonraker connects; recover if SSE patches stop updating. */
+  const prevLiveConnectedRef = useRef<Map<number, boolean>>(new Map())
+  useEffect(() => {
+    if (useMocks || !printers?.length) return
+    let newlyConnected = false
+    const now = Date.now() / 1000
+    for (const [id, u] of liveStatus) {
+      const was = prevLiveConnectedRef.current.get(id) ?? false
+      if (u.connected && !was) {
+        newlyConnected = true
+      }
+      const age = u.ts != null ? now - u.ts : Infinity
+      if (u.connected && age > 25) {
+        void apiFetch(`/printers/${id}/moonraker/ping`, { method: 'POST' }).then(() =>
+          loadPrinters(),
+        )
+      }
+      prevLiveConnectedRef.current.set(id, u.connected)
+    }
+    if (newlyConnected) {
+      void loadPrinters()
+    }
+  }, [liveStatus, useMocks, printers?.length, loadPrinters])
 
   useEffect(() => {
     void loadPreheatPresets()
@@ -568,6 +601,43 @@ export function FarmPage() {
     }
   }
 
+  async function onDropGcode(p: Printer, file: File) {
+    if (!canManagePrinters) return
+    if (isMockPrinter(p)) {
+      setActionError('Mock printers are read-only.')
+      return
+    }
+    const reject = rejectReasonBeforeDropPrint(p)
+    if (reject) {
+      setActionError(reject)
+      return
+    }
+    setActionError(null)
+    setDropPrintBusy(true)
+    try {
+      const preview = await prepareDropPrint(p, file, preheatPresets)
+      setDropPrintPreview(preview)
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Could not read G-code file')
+    } finally {
+      setDropPrintBusy(false)
+    }
+  }
+
+  function onDropPrintCompleted(printerId: number, remainingFilamentGrams: number | null) {
+    const name = dropPrintPreview?.printer.name ?? 'Printer'
+    setPrinters((prev) => {
+      if (!prev) return prev
+      return prev.map((row) =>
+        row.id === printerId && remainingFilamentGrams != null
+          ? { ...row, remaining_filament_grams: remainingFilamentGrams }
+          : row,
+      )
+    })
+    setActionNotice(`Print started on ${name}.`)
+    void loadPrinters()
+  }
+
   return (
     <div className="page">
       <div className="page-head">
@@ -680,6 +750,11 @@ export function FarmPage() {
       </div>
 
       {error ? <p className="error">{error}</p> : null}
+      {dropPrintBusy ? (
+        <p className="muted small" role="status">
+          Reading G-code file…
+        </p>
+      ) : null}
       {actionError ? <p className="error">{actionError}</p> : null}
       {actionNotice ? (
         <p className="success subtle farm-action-notice" role="status" aria-live="polite">
@@ -714,6 +789,10 @@ export function FarmPage() {
         <p className="muted">You are signed in as a viewer. Printer changes require a manager account.</p>
       ) : null}
 
+      {printers && !useMocks ? (
+        <FarmLiveDebugPanel dbPrinters={printers} live={liveStatus} meta={liveStreamMeta} />
+      ) : null}
+
       {!printers ? <p>Loading…</p> : null}
 
       {printers && printers.length === 0 && !canManagePrinters ? (
@@ -731,7 +810,7 @@ export function FarmPage() {
               printer={p}
               viewMode={viewMode}
               preheatPresets={preheatPresets}
-              moonrakerLive={liveStatus.get(p.id)?.connected}
+              moonrakerLive={isPrinterMoonrakerLive(p, liveStatus)}
               isManager={canManagePrinters}
               syncing={syncingId === p.id}
               controlsDisabled={!canManagePrinters}
@@ -768,6 +847,7 @@ export function FarmPage() {
                 }
                 setModal({ type: 'sendGcode', printer: x })
               }}
+              onDropGcode={canManagePrinters ? (x, file) => void onDropGcode(x, file) : undefined}
               onSync={(x) => void onSyncMoonraker(x)}
               onDelete={(x) => void onDelete(x)}
             />
@@ -805,6 +885,14 @@ export function FarmPage() {
 
       {modal?.type === 'sendGcode' ? (
         <SendGcodeModal open printer={modal.printer} onClose={() => setModal(null)} />
+      ) : null}
+
+      {dropPrintPreview ? (
+        <DropPrintConfirmModal
+          preview={dropPrintPreview}
+          onClose={() => setDropPrintPreview(null)}
+          onPrinted={onDropPrintCompleted}
+        />
       ) : null}
 
       <HaPrinterPowerOffModal

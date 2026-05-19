@@ -26,6 +26,8 @@ type Props = {
   onEditHaPower?: (p: Printer) => void
   onEditFilament: (p: Printer) => void
   onSendGcode: (p: Printer) => void
+  /** Manager: drop a .gcode file onto the card to quick-print. */
+  onDropGcode?: (p: Printer, file: File) => void
   onSync: (p: Printer) => void | Promise<void>
   onDelete: (p: Printer) => void
 }
@@ -45,10 +47,12 @@ export function PrinterFarmCard({
   onEditHaPower,
   onEditFilament,
   onSendGcode,
+  onDropGcode,
   onSync,
   onDelete,
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [deleteTypeName, setDeleteTypeName] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
@@ -93,8 +97,54 @@ export function PrinterFarmCard({
     moonrakerLive ||
     printerHasRenderableTemps(p)
 
+  const dropEnabled = Boolean(isManager && onDropGcode)
+
+  function acceptGcodeFile(file: File | undefined): file is File {
+    if (!file) return false
+    const n = file.name.toLowerCase()
+    return n.endsWith('.gcode') || n.endsWith('.gco') || n.endsWith('.bgcode')
+  }
+
   return (
-    <article className={`card printer-card${missingMaterial ? ' printer-card--missing-material' : ''}`}>
+    <article
+      className={`card printer-card${missingMaterial ? ' printer-card--missing-material' : ''}${dragOver ? ' printer-card--drop-target' : ''}`}
+      onDragEnter={
+        dropEnabled
+          ? (e) => {
+              e.preventDefault()
+              setDragOver(true)
+            }
+          : undefined
+      }
+      onDragOver={
+        dropEnabled
+          ? (e) => {
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'copy'
+              setDragOver(true)
+            }
+          : undefined
+      }
+      onDragLeave={
+        dropEnabled
+          ? (e) => {
+              if (e.currentTarget.contains(e.relatedTarget as Node)) return
+              setDragOver(false)
+            }
+          : undefined
+      }
+      onDrop={
+        dropEnabled
+          ? (e) => {
+              e.preventDefault()
+              setDragOver(false)
+              const file = e.dataTransfer.files[0]
+              if (!acceptGcodeFile(file)) return
+              onDropGcode?.(p, file)
+            }
+          : undefined
+      }
+    >
       <div className="printer-card-head">
         <div className="printer-card-title">
           <h2>{p.name}</h2>

@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -231,6 +231,7 @@ def replace_roll(
 async def print_gcode_on_printer(
     printer_id: int,
     file: UploadFile = File(...),
+    filament_used_grams: float | None = Form(default=None),
     _: User = Depends(require_manager),
     db: Session = Depends(get_db),
 ):
@@ -275,12 +276,21 @@ async def print_gcode_on_printer(
     if not ok:
         raise HTTPException(status_code=502, detail=msg or "Moonraker upload failed")
 
+    remaining: float | None = None
+    if filament_used_grams is not None and filament_used_grams > 0:
+        p.remaining_filament_grams = max(0.0, p.remaining_filament_grams - filament_used_grams)
+        p.updated_at = datetime.now(timezone.utc)
+        remaining = float(p.remaining_filament_grams)
+        db.commit()
+        db.refresh(p)
+
     return PrinterPrintGcodeResult(
         ok=True,
         message=msg,
         moonraker_path=moonraker_path,
         print_started=print_started,
         print_queued=print_queued,
+        remaining_filament_grams=remaining,
     )
 
 
