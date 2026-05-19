@@ -5,10 +5,9 @@ type Props = {
 }
 
 /**
- * Exclamation control next to the Error pill: show ``Last error`` text on hover (fine pointer)
- * or when pinned open by click (tap / keyboard). Click outside or Escape closes the pin.
+ * One-line Moonraker error with ellipsis; full text in a hover/click popover.
  */
-export function PrinterLastErrorHint({ message }: Props) {
+export function PrinterErrorLine({ message }: Props) {
   const [pinned, setPinned] = useState(false)
   const [hover, setHover] = useState(false)
   const wrapRef = useRef<HTMLSpanElement>(null)
@@ -36,7 +35,7 @@ export function PrinterLastErrorHint({ message }: Props) {
   return (
     <span
       ref={wrapRef}
-      className={`printer-error-hint${open ? ' is-open' : ''}`}
+      className={`printer-error-line${open ? ' is-open' : ''}`}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={(ev) => {
         const rel = ev.relatedTarget as Node | null
@@ -46,30 +45,20 @@ export function PrinterLastErrorHint({ message }: Props) {
     >
       <button
         type="button"
-        className="printer-error-hint-btn"
+        className="printer-error-line-text"
         aria-expanded={open}
         aria-controls={popoverId}
-        title="Last error (hover or click)"
+        title={message}
         onClick={(ev) => {
           ev.stopPropagation()
           setPinned((p) => !p)
         }}
       >
-        <svg className="printer-error-hint-icon" viewBox="0 0 20 20" aria-hidden>
-          <circle cx="10" cy="10" r="8.25" fill="none" stroke="currentColor" strokeWidth="1.35" />
-          <path
-            d="M10 5.4v5.2M10 14.1v.01"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.85"
-            strokeLinecap="round"
-          />
-        </svg>
+        {message}
       </button>
-      <div className="printer-error-popover" id={popoverId} role="tooltip">
-        <span className="printer-error-popover-label">Last error</span>
-        <p className="printer-error-popover-text">{message}</p>
-      </div>
+      <span className="printer-error-line-popover" id={popoverId} role="tooltip">
+        {message}
+      </span>
     </span>
   )
 }

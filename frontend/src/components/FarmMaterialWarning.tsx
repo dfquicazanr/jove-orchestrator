@@ -5,13 +5,29 @@ type Props = {
   printers: Printer[]
   /** Extra context for managers (planner hint). */
   showPlannerHint?: boolean
+  /** Tighter single-line copy for dense layouts (e.g. planner). */
+  compact?: boolean
 }
 
-export function FarmMaterialWarning({ printers, showPlannerHint = true }: Props) {
+export function FarmMaterialWarning({
+  printers,
+  showPlannerHint = true,
+  compact = false,
+}: Props) {
   const missing = printersWithoutLoadedMaterial(printers)
   if (missing.length === 0) return null
 
   const names = missing.map((p) => p.name).join(', ')
+
+  if (compact) {
+    return (
+      <p className="farm-material-warning farm-material-warning--compact" role="status">
+        <strong>{names}</strong>
+        {missing.length === 1 ? ' has' : ' have'} no loaded material — set via{' '}
+        <strong>Edit → Filament</strong> on the farm.
+      </p>
+    )
+  }
 
   return (
     <p className="farm-material-warning" role="status">

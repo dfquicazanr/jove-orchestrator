@@ -367,13 +367,12 @@ export function PlannerPage() {
   }, [previewReady, session, filesById, safetyMarginPercent, assignments, printers])
 
   return (
-    <div className="page">
-      <div className="page-head">
+    <div className="page planner-page">
+      <div className="page-head planner-page-head">
         <div>
           <h1>Planner</h1>
-          <p className="muted">
-            Build a print session, optimize printer assignments, then schedule jobs on the farm. Leaving this
-            page discards an unsaved session.
+          <p className="muted small">
+            Build a session, optimize assignments, then schedule. Leaving discards unsaved work.
           </p>
         </div>
       </div>
@@ -386,67 +385,91 @@ export function PlannerPage() {
       ) : null}
 
       <section className="card planner-add-panel">
-        <h2>Add to session</h2>
-        <div className="planner-add-row">
-          <label>
-            Library file
-            <select value={addFileId} onChange={(e) => setAddFileId(e.target.value)}>
-              {files.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.display_name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Copies
-            <input type="number" min={1} value={addCopies} onChange={(e) => setAddCopies(e.target.value)} />
-          </label>
-          <button type="button" className="btn" onClick={addFileToSession}>
-            Add file
-          </button>
+        <div className="planner-panel-head">
+          <h2>Add to session</h2>
+          <span className="muted small planner-add-hint">
+            Or from <Link to="/library">library</Link> / <Link to="/kits">kits</Link>
+          </span>
         </div>
-        <div className="planner-add-row">
-          <label>
-            Print kit
-            <select value={addKitId} onChange={(e) => setAddKitId(e.target.value)}>
-              <option value="">—</option>
-              {kits.map((k) => (
-                <option key={k.id} value={k.id}>
-                  {k.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Kit runs
-            <input type="number" min={1} value={addKitCopies} onChange={(e) => setAddKitCopies(e.target.value)} />
-          </label>
-          <button type="button" className="btn" disabled={!addKitId} onClick={addKitToSession}>
+        <div className="planner-add-grid">
+          <span className="planner-add-row-label" id="planner-add-file-label">
+            File
+          </span>
+          <select
+            className="planner-add-select"
+            aria-labelledby="planner-add-file-label"
+            value={addFileId}
+            onChange={(e) => setAddFileId(e.target.value)}
+          >
+            {files.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.display_name}
+              </option>
+            ))}
+          </select>
+          <span className="planner-add-qty-label" aria-hidden>
+            ×
+          </span>
+          <input
+            type="number"
+            min={1}
+            className="planner-add-qty"
+            aria-label="File copies"
+            value={addCopies}
+            onChange={(e) => setAddCopies(e.target.value)}
+          />
+          <button type="button" className="btn sm" onClick={addFileToSession}>
+            Add
+          </button>
+
+          <span className="planner-add-row-label" id="planner-add-kit-label">
+            Kit
+          </span>
+          <select
+            className="planner-add-select"
+            aria-labelledby="planner-add-kit-label"
+            value={addKitId}
+            onChange={(e) => setAddKitId(e.target.value)}
+          >
+            <option value="">—</option>
+            {kits.map((k) => (
+              <option key={k.id} value={k.id}>
+                {k.name}
+              </option>
+            ))}
+          </select>
+          <span className="planner-add-qty-label" aria-hidden>
+            ×
+          </span>
+          <input
+            type="number"
+            min={1}
+            className="planner-add-qty"
+            aria-label="Kit runs"
+            value={addKitCopies}
+            onChange={(e) => setAddKitCopies(e.target.value)}
+          />
+          <button type="button" className="btn sm" disabled={!addKitId} onClick={addKitToSession}>
             Add kit
           </button>
         </div>
-        <p className="muted small">
-          Or pick files in the <Link to="/library">library</Link> / <Link to="/kits">kits</Link> pages and send
-          them here.
-        </p>
       </section>
 
-      <section className="card">
-        <div className="queue-list-head">
+      <section className="card planner-session-card">
+        <div className="queue-list-head planner-session-head">
           <h2>Session ({session.length})</h2>
           {session.length > 0 ? (
-            <button type="button" className="btn subtle" onClick={clearSession}>
-              Clear session
+            <button type="button" className="btn subtle sm" onClick={clearSession}>
+              Clear
             </button>
           ) : null}
         </div>
-        {printers.length > 0 ? <FarmMaterialWarning printers={printers} /> : null}
+        {printers.length > 0 ? (
+          <FarmMaterialWarning printers={printers} compact showPlannerHint={false} />
+        ) : null}
         {session.length === 0 ? (
-          <p className="muted">No jobs in this session yet.</p>
+          <p className="muted small planner-session-empty">No jobs in this session yet.</p>
         ) : (
-          <>
-          <PlannerSessionSummary summary={sessionSummary} />
           <table className="table queue-table planner-session-table">
             <thead>
               <tr>
@@ -521,58 +544,62 @@ export function PlannerPage() {
               })}
             </tbody>
           </table>
-          </>
         )}
-      </section>
-
-      <section className="card queue-plan-panel">
-        <h2>Optimize prints</h2>
-        <p className="muted small">
-          Assigns jobs to ready printers with matching material, color, and enough filament, spreading work
-          across printers to finish as soon as possible. Override material or color per row, or set either to
-          Any.
-        </p>
-        <div className="queue-plan-controls">
-          <label className="queue-waste-label">
-            <span className="queue-waste-label-row">
-              Filament safety margin
-              <InfoTooltip title="Filament safety margin">
-                <FilamentSafetyMarginHelp />
+        {session.length > 0 ? <PlannerSessionSummary summary={sessionSummary} /> : null}
+        <div className="planner-session-footer">
+          <div className="planner-optimize-bar">
+            <span className="planner-optimize-label">
+              Optimize
+              <InfoTooltip title="Optimize prints" triggerLabel="How optimization works">
+                <p>
+                  Assigns jobs to ready printers with matching material, color, and enough filament.
+                  Override material or color per row, or set either to Any.
+                </p>
               </InfoTooltip>
             </span>
-            <span className="queue-percent-field">
-              <input
-                type="number"
-                min={0}
-                max={100}
-                step={5}
-                value={safetyMarginPercent}
-                disabled={optimizing || committing}
-                onChange={(e) => setSafetyMarginPercent(e.target.value)}
-              />
-              <span className="queue-percent-suffix" aria-hidden>
-                %
+            <label className="queue-waste-label planner-margin-label">
+              <span className="queue-waste-label-row">
+                Safety margin
+                <InfoTooltip title="Filament safety margin">
+                  <FilamentSafetyMarginHelp />
+                </InfoTooltip>
               </span>
-            </span>
-          </label>
-          <button
-            type="button"
-            className="btn primary"
-            disabled={optimizing || committing || session.length === 0}
-            onClick={() => void runOptimize()}
-          >
-            {optimizing ? 'Optimizing…' : 'Optimize prints'}
-          </button>
-          {previewReady ? (
-            <button
-              type="button"
-              className="btn"
-              disabled={committing || assignedCount === 0}
-              onClick={() => void commitPlan()}
-            >
-              {committing ? 'Scheduling…' : `Schedule on farm (${assignedCount})`}
-            </button>
-          ) : null}
+              <span className="queue-percent-field">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={safetyMarginPercent}
+                  disabled={optimizing || committing}
+                  onChange={(e) => setSafetyMarginPercent(e.target.value)}
+                />
+                <span className="queue-percent-suffix" aria-hidden>
+                  %
+                </span>
+              </span>
+            </label>
+            <div className="planner-optimize-actions">
+              <button
+                type="button"
+                className="btn primary sm"
+                disabled={optimizing || committing || session.length === 0}
+                onClick={() => void runOptimize()}
+              >
+                {optimizing ? 'Optimizing…' : 'Optimize'}
+              </button>
+              {previewReady ? (
+                <button
+                  type="button"
+                  className="btn sm"
+                  disabled={committing || assignedCount === 0}
+                  onClick={() => void commitPlan()}
+                >
+                  {committing ? 'Scheduling…' : `Schedule (${assignedCount})`}
+                </button>
+              ) : null}
+            </div>
+          </div>
         </div>
       </section>
 

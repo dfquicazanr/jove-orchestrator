@@ -756,54 +756,60 @@ dd {
   margin-top: 0.35rem;
 }
 
-.printer-error-hint {
+.printer-error-line {
   position: relative;
-  display: inline-flex;
-  vertical-align: middle;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin-top: 0.3rem;
 }
 
-.printer-error-hint-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.1rem;
+.printer-error-line-text {
+  display: block;
+  width: 100%;
+  min-width: 0;
   margin: 0;
+  padding: 0;
   border: none;
-  border-radius: 50%;
-  background: rgba(229, 57, 53, 0.15);
+  background: none;
+  text-align: left;
+  font: inherit;
+  font-size: 0.78rem;
+  line-height: 1.3;
   color: #ff8a80;
-  cursor: pointer;
-  line-height: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
 }
 
-.printer-error-hint-btn:hover {
-  background: rgba(229, 57, 53, 0.28);
+.printer-error-line-text:hover {
   color: #ffab91;
 }
 
-.printer-error-hint-btn:focus-visible {
+.printer-error-line-text:focus-visible {
   outline: 2px solid #8ab4ff;
   outline-offset: 2px;
+  border-radius: 4px;
 }
 
-.printer-error-hint-icon {
-  width: 1.1rem;
-  height: 1.1rem;
-  display: block;
-}
-
-.printer-error-popover {
+.printer-error-line-popover {
   position: absolute;
   left: 0;
-  top: calc(100% - 2px);
+  top: calc(100% + 4px);
   z-index: 45;
   min-width: 11rem;
-  max-width: min(18rem, calc(100vw - 2rem));
-  padding: 0.55rem 0.65rem 0.6rem;
+  max-width: min(20rem, calc(100vw - 2rem));
+  padding: 0.5rem 0.6rem;
   border-radius: 8px;
   border: 1px solid #5c2b2b;
   background: #1a1212;
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: #ff8a80;
+  word-break: break-word;
+  overflow-wrap: anywhere;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -812,30 +818,15 @@ dd {
     visibility 0.12s ease;
 }
 
-.printer-error-hint:hover .printer-error-popover,
-.printer-error-hint.is-open .printer-error-popover {
+.printer-error-line:hover .printer-error-line-popover,
+.printer-error-line.is-open .printer-error-line-popover {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
 }
 
-.printer-error-popover-label {
-  display: block;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #9aa7bd;
-  margin-bottom: 0.35rem;
-}
-
-.printer-error-popover-text {
-  margin: 0;
-  font-size: 0.85rem;
-  line-height: 1.4;
-  color: #ff8a80;
-  word-break: break-word;
-  overflow-wrap: anywhere;
+.printer-card-meta .printer-error-line {
+  margin-top: 0;
 }
 
 .printer-card-status .pill {
@@ -2404,24 +2395,186 @@ dd {
   );
 }
 
-.planner-add-panel .planner-add-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
-}
-
-.planner-add-row label {
+/* Planner page — compact layout */
+.planner-page {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.5rem;
+}
+
+.planner-page .page-head.planner-page-head {
+  margin-bottom: 0.15rem;
+}
+
+.planner-page .page-head.planner-page-head h1 {
+  margin-bottom: 0.15rem;
+}
+
+.planner-page .card {
+  padding: 0.6rem 0.85rem;
+  gap: 0.45rem;
+}
+
+.planner-page .card h2 {
+  font-size: 0.98rem;
+}
+
+.planner-page .queue-plan-panel,
+.planner-page .planner-add-panel {
+  margin-bottom: 0;
+}
+
+.planner-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem 0.75rem;
+}
+
+.planner-panel-head h2 {
+  margin: 0;
+}
+
+.planner-add-hint {
+  white-space: nowrap;
+}
+
+.planner-add-grid {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(10rem, 1fr) auto 3.25rem auto;
+  gap: 0.35rem 0.45rem;
+  align-items: center;
+}
+
+.planner-add-row-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #9aa7bd;
+  text-align: right;
+  padding-right: 0.15rem;
+}
+
+.planner-add-qty-label {
+  text-align: center;
+  color: #6b7a94;
   font-size: 0.85rem;
 }
 
-.planner-add-row select,
-.planner-add-row input {
-  min-width: 10rem;
+.planner-page .planner-add-grid select,
+.planner-page .planner-add-grid input {
+  width: 100%;
+  padding: 0.32rem 0.45rem;
+  font-size: 0.85rem;
+  border-radius: 6px;
+  border: 1px solid #2c3b52;
+  background: #0f141c;
+  color: #e8eef7;
+}
+
+.planner-add-select {
+  min-width: 0;
+}
+
+.planner-add-qty {
+  width: 100%;
+  min-width: 0;
+}
+
+.planner-page .farm-material-warning--compact {
+  margin: 0;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.planner-session-head {
+  margin-bottom: 0.35rem;
+}
+
+.planner-session-empty {
+  margin: 0;
+}
+
+.planner-page .planner-session-table {
+  margin-top: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.planner-page .planner-session-summary {
+  margin: 0.5rem 0 0;
+  padding: 0.45rem 0.55rem;
+}
+
+.planner-session-footer {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #243044;
+}
+
+.planner-optimize-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.65rem;
+}
+
+.planner-optimize-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #c9d6ea;
+  flex-shrink: 0;
+}
+
+.planner-page .planner-margin-label {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.planner-page .planner-margin-label .queue-percent-field {
+  max-width: 5.5rem;
+}
+
+.planner-page .planner-margin-label .queue-percent-field input {
+  padding: 0.32rem 0.4rem;
+}
+
+.planner-optimize-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+@media (max-width: 720px) {
+  .planner-add-grid {
+    grid-template-columns: 2.5rem 1fr auto 3rem auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .planner-add-grid {
+    grid-template-columns: 2.5rem 1fr 3rem auto;
+  }
+
+  .planner-add-qty-label {
+    display: none;
+  }
+
+  .planner-add-grid .planner-add-qty {
+    grid-column: 3;
+  }
+
+  .planner-add-grid .btn.sm {
+    grid-column: 4;
+  }
 }
 
 .missing-print-time-list {
@@ -2495,8 +2648,8 @@ dd {
 }
 
 .planner-session-summary {
-  margin-bottom: 0.85rem;
-  padding: 0.65rem 0.75rem;
+  margin-bottom: 0.65rem;
+  padding: 0.5rem 0.65rem;
   border-radius: 8px;
   border: 1px solid #243044;
   background: rgba(12, 16, 24, 0.65);

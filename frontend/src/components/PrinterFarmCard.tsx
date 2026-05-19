@@ -3,7 +3,7 @@ import { FilamentSpiralGraphic } from './FilamentSpiralGraphic'
 import { PrinterFarmAdvancedPanel } from './PrinterFarmAdvancedPanel'
 import type { PrinterControlAction } from '../lib/printerControlActions'
 import type { MaterialPreheatPreset } from '../types/materialPreheat'
-import { PrinterLastErrorHint } from './PrinterLastErrorHint'
+import { PrinterErrorLine } from './PrinterErrorLine'
 import type { FarmViewMode } from '../lib/farmViewMode'
 import { printerStatusLabel } from '../lib/printerStatusLabels'
 import { printerHasRenderableTemps, formatHeaterActualTarget } from '../lib/formatPrinterTemps'
@@ -105,15 +105,15 @@ export function PrinterFarmCard({
             >
               {printerStatusLabel(p.last_known_status)}
             </span>
-            {statusClass === 'error' && p.last_moonraker_error ? (
-              <PrinterLastErrorHint message={p.last_moonraker_error} />
-            ) : null}
             {p.moonraker_api_key_present ? (
               <span className="pill subtle" title="An API key is stored for this printer">
                 API key set
               </span>
             ) : null}
           </p>
+          {statusClass === 'error' && p.last_moonraker_error ? (
+            <PrinterErrorLine message={p.last_moonraker_error} />
+          ) : null}
         </div>
         {isManager ? (
           <div className={`printer-card-menu${menuOpen ? ' printer-card-menu-open' : ''}`} ref={menuRef}>
@@ -293,7 +293,9 @@ export function PrinterFarmCard({
           {p.last_moonraker_error && statusClass !== 'error' ? (
             <>
               <dt>Last error</dt>
-              <dd className="error subtle">{p.last_moonraker_error}</dd>
+              <dd>
+                <PrinterErrorLine message={p.last_moonraker_error} />
+              </dd>
             </>
           ) : null}
         </dl>
