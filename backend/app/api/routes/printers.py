@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -18,18 +18,17 @@ from app.schemas.printer import (
     LoadedFilamentUpdate,
     MoonrakerPingResult,
     PrinterControlResult,
+    PrinterCreate,
     PrinterHomeBody,
+    PrinterOut,
     PrinterPreheatBody,
     PrinterPrintGcodeResult,
-    PrinterCreate,
-    PrinterOut,
     PrinterTestConnectionBody,
     PrinterUpdate,
     RollReplacement,
 )
 from app.services import homeassistant as ha_svc
 from app.services.moonraker import apply_ping_to_printer, ping_moonraker_at, ping_printer
-from app.services.moonraker_url import MoonrakerUrlError, normalize_moonraker_base_url
 from app.services.moonraker_control import (
     build_cooldown_script,
     build_home_script,
@@ -38,6 +37,7 @@ from app.services.moonraker_control import (
     run_gcode_script,
 )
 from app.services.moonraker_print import upload_gcode_to_moonraker
+from app.services.moonraker_url import MoonrakerUrlError, normalize_moonraker_base_url
 from app.services.moonraker_watch import moonraker_watch
 
 router = APIRouter()
@@ -119,7 +119,7 @@ async def stream_printer_status(
             while True:
                 try:
                     msg = await asyncio.wait_for(q.get(), timeout=25.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield ": keepalive\n\n"
                     continue
                 if msg is None:
@@ -169,7 +169,7 @@ def update_printer(
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
     for k, v in data.items():
         setattr(p, k, v)
-    p.updated_at = datetime.now(timezone.utc)
+    p.updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(p)
     return _printer_out(p)
@@ -202,7 +202,7 @@ def set_loaded_filament(
     p.loaded_material = body.loaded_material
     p.loaded_color = body.loaded_color
     p.remaining_filament_grams = body.remaining_filament_grams
-    p.updated_at = datetime.now(timezone.utc)
+    p.updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(p)
     return _printer_out(p)
@@ -221,7 +221,7 @@ def replace_roll(
     p.loaded_material = body.loaded_material
     p.loaded_color = body.loaded_color
     p.remaining_filament_grams = body.remaining_filament_grams
-    p.updated_at = datetime.now(timezone.utc)
+    p.updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(p)
     return _printer_out(p)
@@ -279,7 +279,7 @@ async def print_gcode_on_printer(
     remaining: float | None = None
     if filament_used_grams is not None and filament_used_grams > 0:
         p.remaining_filament_grams = max(0.0, p.remaining_filament_grams - filament_used_grams)
-        p.updated_at = datetime.now(timezone.utc)
+        p.updated_at = datetime.now(UTC)
         remaining = float(p.remaining_filament_grams)
         db.commit()
         db.refresh(p)
@@ -400,7 +400,7 @@ async def moonraker_ping(
         raise HTTPException(status_code=404, detail="Printer not found")
     ok, err, derived, wh_st, wh_msg = await ping_printer(p)
     apply_ping_to_printer(p, ok, err, derived)
-    p.updated_at = datetime.now(timezone.utc)
+    p.updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(p)
     if get_settings().moonraker_watch_enabled:

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from app.models.printer import Printer
 
 
-class PrintQueueStatus(str, enum.Enum):
+class PrintQueueStatus(enum.StrEnum):
     draft = "draft"
     queued = "queued"
     printing = "printing"

@@ -1,10 +1,13 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 
 from app.models.printer import Printer, PrinterStatus
-from app.services.moonraker_url import format_moonraker_connection_error, normalize_moonraker_base_url
+from app.services.moonraker_url import (
+    format_moonraker_connection_error,
+    normalize_moonraker_base_url,
+)
 
 
 async def moonraker_get_json(base_url: str, path: str, api_key: str | None = None) -> Any:
@@ -199,7 +202,7 @@ def apply_ping_to_printer(
     err: str | None,
     derived_status: str | None = None,
 ) -> None:
-    printer.last_moonraker_check_at = datetime.now(timezone.utc)
+    printer.last_moonraker_check_at = datetime.now(UTC)
     if ok:
         printer.last_moonraker_error = None
         printer.last_known_status = (

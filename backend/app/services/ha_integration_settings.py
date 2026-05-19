@@ -5,8 +5,7 @@ from typing import Literal
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models.farm_home_assistant_setting import FarmHomeAssistantSetting, SINGLETON_ID
-
+from app.models.farm_home_assistant_setting import SINGLETON_ID, FarmHomeAssistantSetting
 
 HaSource = Literal["database", "environment"]
 

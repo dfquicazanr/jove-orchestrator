@@ -19,8 +19,8 @@ from app.schemas.material_preheat import (
     MaterialPreheatPresetOut,
     MaterialPreheatPresetsUpdate,
 )
-from app.services import homeassistant as ha_svc
 from app.services import ha_integration_settings as ha_integration
+from app.services import homeassistant as ha_svc
 from app.services.material_preheat import ensure_default_preheat_presets
 
 

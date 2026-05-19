@@ -2,12 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_db, require_manager, require_viewer_or_manager
-from app.services.material_fields import resolve_color_fields
 from app.models.gcode_file import GCodeFile
 from app.models.material_preheat_preset import MaterialPreheatPreset
 from app.models.print_kit import PrintKit, PrintKitItem
 from app.models.user import User
 from app.schemas.print_kit import PrintKitCreate, PrintKitItemOut, PrintKitOut, PrintKitUpdate
+from app.services.material_fields import resolve_color_fields
 
 router = APIRouter()
 

@@ -14,8 +14,8 @@ from app.models.print_kit import PrintKitItem
 from app.models.print_queue import PrintQueueItem, PrintQueueStatus
 from app.models.user import User
 from app.schemas.gcode import GCodeFileOut, GCodeFilePatch, GCodeUploadMetadata
-from app.services.gcode_labels import default_display_name
 from app.services.filament_estimate import reconcile_filament
+from app.services.gcode_labels import default_display_name
 from app.services.gcode_parse import parse_gcode_metadata
 from app.services.material_fields import resolve_color_fields, resolve_material_fields
 
@@ -177,8 +177,14 @@ def patch_gcode_file(
     if "display_name" in data and data["display_name"] is not None:
         gf.display_name = data["display_name"].strip() or default_display_name(gf.original_filename)
 
-    mat_id = data.get("material_preset_id", gf.material_preset_id) if "material_preset_id" in data else gf.material_preset_id
-    mat_name_in = data.get("required_material", gf.required_material) if "required_material" in data else gf.required_material
+    if "material_preset_id" in data:
+        mat_id = data.get("material_preset_id", gf.material_preset_id)
+    else:
+        mat_id = gf.material_preset_id
+    if "required_material" in data:
+        mat_name_in = data.get("required_material", gf.required_material)
+    else:
+        mat_name_in = gf.required_material
     if "material_preset_id" in data or "required_material" in data:
         mat_id, mat_name = resolve_material_fields(
             db, material_preset_id=mat_id, required_material=mat_name_in

@@ -1,3 +1,5 @@
+from datetime import UTC
+
 import bcrypt
 from jose import JWTError, jwt
 from pydantic import BaseModel
@@ -26,9 +28,9 @@ class TokenPayload(BaseModel):
 
 def create_access_token(*, username: str, role: str) -> str:
     s = get_settings()
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    expire = datetime.now(timezone.utc) + timedelta(minutes=s.jwt_expire_minutes)
+    expire = datetime.now(UTC) + timedelta(minutes=s.jwt_expire_minutes)
     payload = {"sub": username, "role": role, "exp": expire}
     return jwt.encode(payload, s.jwt_secret_key, algorithm=s.jwt_algorithm)
 

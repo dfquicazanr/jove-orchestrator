@@ -8,7 +8,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import websockets
@@ -529,7 +529,7 @@ class MoonrakerWatchService:
         http_klipper_snapshot: tuple[str | None, str | None] | None = None,
         ws_heater_temps: tuple[float | None, float | None, float | None, float | None] | None = None,
     ) -> None:
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_iso = datetime.now(UTC).isoformat()
         http_interval = get_settings().moonraker_http_liveness_interval_sec
         async with self._lock:
             prev = self._live.get(printer_id)
@@ -716,7 +716,7 @@ class MoonrakerWatchService:
                     p.last_moonraker_error = error
             else:
                 apply_ping_to_printer(p, False, error, None)
-            p.updated_at = datetime.now(timezone.utc)
+            p.updated_at = datetime.now(UTC)
             db.commit()
         except Exception:
             db.rollback()

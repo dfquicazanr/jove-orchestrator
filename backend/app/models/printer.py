@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime
+from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, Float, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
+if TYPE_CHECKING:
+    from app.models.print_queue import PrintQueueItem
 
-class PrinterStatus(str, enum.Enum):
+
+class PrinterStatus(enum.StrEnum):
     offline = "offline"
     powered_off = "powered_off"
     ready = "ready"
@@ -49,6 +53,6 @@ class Printer(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    queue_items: Mapped[list["PrintQueueItem"]] = relationship(
+    queue_items: Mapped[list[PrintQueueItem]] = relationship(
         "PrintQueueItem", back_populates="assigned_printer"
     )

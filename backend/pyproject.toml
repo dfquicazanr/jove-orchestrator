@@ -35,11 +35,14 @@ where = ["."]
 include = ["app*"]
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+# FastAPI dependency injection uses Depends()/File()/Body() in signatures by design.
+[tool.ruff.lint.per-file-ignores]
+"app/api/**" = ["B008"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

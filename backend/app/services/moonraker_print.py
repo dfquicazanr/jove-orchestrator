@@ -8,7 +8,10 @@ from typing import Any
 
 import httpx
 
-from app.services.moonraker_url import format_moonraker_connection_error, normalize_moonraker_base_url
+from app.services.moonraker_url import (
+    format_moonraker_connection_error,
+    normalize_moonraker_base_url,
+)
 
 _SAFE_FILENAME = re.compile(r"[^a-zA-Z0-9._\- ]+")
 

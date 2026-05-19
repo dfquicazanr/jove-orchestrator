@@ -1,16 +1,15 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_db, require_manager, require_viewer_or_manager
+from app.models.gcode_file import GCodeFile
+from app.models.print_kit import PrintKit, PrintKitItem
 from app.models.print_queue import PrintQueueItem, PrintQueueStatus
 from app.models.printer import Printer
 from app.models.user import User
-from app.models.gcode_file import GCodeFile
-from app.models.material_preheat_preset import MaterialPreheatPreset
-from app.models.print_kit import PrintKit, PrintKitItem
 from app.schemas.queue import (
     GCodeFileBrief,
     PlanCommitRequest,
@@ -242,7 +241,7 @@ def patch_queue_item(
             raise HTTPException(status_code=400, detail="Printer not found")
     for k, v in data.items():
         setattr(item, k, v)
-    item.updated_at = datetime.now(timezone.utc)
+    item.updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(item)
     return item
@@ -400,10 +399,10 @@ def mark_print_completed(
     if est is not None:
         grams = float(est) * waste_factor
         printer.remaining_filament_grams = max(0.0, printer.remaining_filament_grams - grams)
-        printer.updated_at = datetime.now(timezone.utc)
+        printer.updated_at = datetime.now(UTC)
 
     item.status = PrintQueueStatus.done.value
-    item.updated_at = datetime.now(timezone.utc)
+    item.updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(item)
     return item

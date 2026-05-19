@@ -11,9 +11,9 @@ from fastapi.responses import JSONResponse
 from app.api.routes import auth as auth_routes
 from app.api.routes import gcode as gcode_routes
 from app.api.routes import health as health_routes
+from app.api.routes import kits as kits_routes
 from app.api.routes import printers as printers_routes
 from app.api.routes import queue as queue_routes
-from app.api.routes import kits as kits_routes
 from app.api.routes import settings as settings_routes
 from app.api.routes import users as users_routes
 from app.config import get_settings

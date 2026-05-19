@@ -1,4 +1,3 @@
-import pytest
 
 from app.services.filament_estimate import (
     mass_g_from_length_mm,

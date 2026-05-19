@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 
-from app.services.planner import pick_printer_for_job, _PrinterPlanState, _sort_items_for_planning
+from app.services.planner import _PrinterPlanState, _sort_items_for_planning, pick_printer_for_job
 
 
 def _printer(
