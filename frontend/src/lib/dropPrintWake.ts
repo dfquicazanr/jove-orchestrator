@@ -1,4 +1,5 @@
 import { apiFetch } from '../api/client'
+import type { PrinterLiveUpdate } from '../hooks/usePrinterStatusStream'
 import { printerStatusLabel } from './printerStatusLabels'
 import type { Printer } from '../types/printer'
 
@@ -12,6 +13,13 @@ export type DropPrintWakePlan = 'none' | 'power_on'
 export type WakeProgress = {
   phase: 'power_on' | 'waiting_moonraker' | 'waiting_ready' | 'ready' | 'uploading'
   message: string
+}
+
+export type PrinterLiveSyncResponse = {
+  ok: boolean
+  message?: string | null
+  printer: Printer
+  live: PrinterLiveUpdate
 }
 
 function sleep(ms: number): Promise<void> {
@@ -47,6 +55,7 @@ export function wakePlanForDropPrint(printer: Printer): DropPrintWakePlan {
 export async function wakePrinterAndWaitReady(
   printerId: number,
   onProgress?: (progress: WakeProgress) => void,
+  onLivePatch?: (live: PrinterLiveUpdate) => void,
 ): Promise<Printer> {
   onProgress?.({ phase: 'power_on', message: 'Turning on printer power…' })
   await apiFetch<{ ok: boolean }>(`/printers/${printerId}/power/on`, { method: 'POST' })
@@ -56,29 +65,34 @@ export async function wakePrinterAndWaitReady(
 
   const deadline = Date.now() + MAX_WAIT_MS
   let moonrakerUp = false
+  let lastLiveStatus = 'offline'
+  let lastSyncMessage: string | null = null
 
   while (Date.now() < deadline) {
-    const ping = await apiFetch<{ ok: boolean; message?: string | null }>(
-      `/printers/${printerId}/moonraker/ping`,
-      { method: 'POST' },
-    )
+    const sync = await apiFetch<PrinterLiveSyncResponse>(`/printers/${printerId}/live/sync`, {
+      method: 'POST',
+    })
+    onLivePatch?.(sync.live)
+    const liveStatus = sync.live.last_known_status || sync.printer.last_known_status
+    const liveConnected = sync.live.connected ?? sync.ok
+    lastLiveStatus = liveStatus
+    lastSyncMessage = sync.message?.trim() ? sync.message : null
 
-    if (ping.ok) {
+    if (liveConnected) {
       moonrakerUp = true
-      const printer = await apiFetch<Printer>(`/printers/${printerId}`)
-      if (printer.last_known_status === 'ready') {
+      if (liveStatus === 'ready') {
         onProgress?.({ phase: 'ready', message: 'Printer is ready.' })
-        return printer
+        return { ...sync.printer, last_known_status: liveStatus }
       }
       onProgress?.({
         phase: 'waiting_ready',
-        message: `Moonraker online (${printerStatusLabel(printer.last_known_status)}) — waiting for Ready…`,
+        message: `Moonraker online (${printerStatusLabel(liveStatus)}) — waiting for Ready…`,
       })
     } else if (!moonrakerUp) {
       onProgress?.({
         phase: 'waiting_moonraker',
-        message: ping.message?.trim()
-          ? `Waiting for Moonraker… (${ping.message})`
+        message: sync.message?.trim()
+          ? `Waiting for Moonraker… (${sync.message})`
           : 'Waiting for Moonraker…',
       })
     }
@@ -86,7 +100,9 @@ export async function wakePrinterAndWaitReady(
     await sleep(POLL_INTERVAL_MS)
   }
 
+  const statusLabel = printerStatusLabel(lastLiveStatus)
+  const detail = lastSyncMessage ? ` Last Moonraker message: ${lastSyncMessage}` : ''
   throw new Error(
-    'Printer did not reach Ready in time after power on. Check the farm and try Sync when it is up.',
+    `Printer did not reach Ready in time after power on (last status: ${statusLabel}).${detail}`,
   )
 }

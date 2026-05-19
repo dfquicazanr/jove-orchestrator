@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { FarmViewToggle } from '../components/FarmViewToggle'
@@ -18,8 +18,17 @@ import {
   type DropPrintPreview,
 } from '../lib/dropPrintPrepare'
 import { FARM_SUCCESS_TOAST_MS, useAutoDismiss } from '../hooks/useAutoDismiss'
-import { usePrinterStatusStream, type PrinterLiveUpdate } from '../hooks/usePrinterStatusStream'
+import {
+  usePrinterStatusStream,
+  type PrinterLiveUpdate,
+} from '../hooks/usePrinterStatusStream'
 import { applyPrinterLiveUpdates, isPrinterMoonrakerLive } from '../lib/mergePrinterLive'
+import { mergeLiveStreamMaps } from '../lib/mergeLiveStreamMaps'
+import type { PrinterLiveSyncResponse } from '../lib/dropPrintWake'
+import {
+  controlActionNeedsMoonraker,
+  isPrinterMoonrakerReachable,
+} from '../lib/printerReachability'
 import { loadFarmViewMode, saveFarmViewMode, type FarmViewMode } from '../lib/farmViewMode'
 import { mockPrintersMode } from '../lib/mockPrintersMode'
 import type { PrinterControlAction } from '../lib/printerControlActions'
@@ -28,15 +37,6 @@ import { MOCK_PRINTERS, isMockPrinter } from '../mocks/mockPrinters'
 import type { MaterialPreheatPreset } from '../types/materialPreheat'
 import { MOCK_PREHEAT_PRESETS } from '../types/materialPreheat'
 import type { Printer } from '../types/printer'
-
-/** Moonraker looks reachable: live stream says connected, or no live row and status is not clearly down. */
-function isPrinterReachableForBulk(p: Printer, live: Map<number, PrinterLiveUpdate>): boolean {
-  const u = live.get(p.id)
-  if (u?.connected === true) return true
-  if (u?.connected === false) return false
-  const s = p.last_known_status
-  return s !== 'offline' && s !== 'powered_off'
-}
 
 type ConnectionModal = {
   type: 'connection'
@@ -76,7 +76,39 @@ export function FarmPage() {
   const [dropPrintBusy, setDropPrintBusy] = useState(false)
   const useMocks = mockPrintersMode()
   const { live: liveStatus, meta: liveStreamMeta } = usePrinterStatusStream(!useMocks)
+  const [livePatches, setLivePatches] = useState<Map<number, PrinterLiveUpdate>>(() => new Map())
+  const mergedLive = useMemo(
+    () => mergeLiveStreamMaps(liveStatus, livePatches),
+    [liveStatus, livePatches],
+  )
+  const applyLivePatch = useCallback((live: PrinterLiveUpdate) => {
+    setLivePatches((prev) => {
+      const next = new Map(prev)
+      next.set(live.printer_id, live)
+      return next
+    })
+  }, [])
   const controlFeedbackTimers = useRef<Record<number, number>>({})
+
+  useEffect(() => {
+    // Drop stale poll patches once SSE has caught up for that printer.
+    setLivePatches((prev) => {
+      if (prev.size === 0) return prev
+      let changed = false
+      const next = new Map(prev)
+      for (const [id, patch] of prev) {
+        const sse = liveStatus.get(id)
+        if (!sse) continue
+        const patchTs = typeof patch.ts === 'number' ? patch.ts : null
+        const sseTs = typeof sse.ts === 'number' ? sse.ts : null
+        if (patchTs !== null && sseTs !== null && sseTs >= patchTs) {
+          next.delete(id)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [liveStatus])
 
   const dismissActionNotice = useCallback(() => setActionNotice(null), [])
 
@@ -171,23 +203,28 @@ export function FarmPage() {
     if (useMocks || !printers?.length) return
     let newlyConnected = false
     const now = Date.now() / 1000
-    for (const [id, u] of liveStatus) {
+    for (const [id, u] of mergedLive) {
       const was = prevLiveConnectedRef.current.get(id) ?? false
       if (u.connected && !was) {
         newlyConnected = true
       }
       const age = u.ts != null ? now - u.ts : Infinity
       if (u.connected && age > 25) {
-        void apiFetch(`/printers/${id}/moonraker/ping`, { method: 'POST' }).then(() =>
-          loadPrinters(),
-        )
+        void apiFetch<PrinterLiveSyncResponse>(`/printers/${id}/live/sync`, { method: 'POST' })
+          .then((sync) => {
+            applyLivePatch(sync.live)
+            return loadPrinters()
+          })
+          .catch(() => {
+            /* ignore transient sync errors */
+          })
       }
       prevLiveConnectedRef.current.set(id, u.connected)
     }
     if (newlyConnected) {
       void loadPrinters()
     }
-  }, [liveStatus, useMocks, printers?.length, loadPrinters])
+  }, [mergedLive, useMocks, printers?.length, loadPrinters])
 
   useEffect(() => {
     void loadPreheatPresets()
@@ -218,9 +255,10 @@ export function FarmPage() {
     setActionError(null)
     setSyncingId(p.id)
     try {
-      await apiFetch<{ ok: boolean; message?: string | null }>(`/printers/${p.id}/moonraker/ping`, {
+      const sync = await apiFetch<PrinterLiveSyncResponse>(`/printers/${p.id}/live/sync`, {
         method: 'POST',
       })
+      applyLivePatch(sync.live)
       await loadPrinters()
     } catch (e) {
       setActionError(e instanceof Error ? e.message : 'Sync failed')
@@ -241,6 +279,18 @@ export function FarmPage() {
 
     if (action === 'power_off') {
       setHaPowerOffConfirmPrinter(p)
+      return
+    }
+
+    const merged =
+      applyPrinterLiveUpdates([p], mergedLive).find((row) => row.id === p.id) ?? p
+    if (
+      controlActionNeedsMoonraker(action) &&
+      !isPrinterMoonrakerReachable(merged, mergedLive)
+    ) {
+      setActionError(
+        `${p.name} is offline — use hardware power or wait for Moonraker before this command.`,
+      )
       return
     }
 
@@ -334,15 +384,15 @@ export function FarmPage() {
 
   function reachableMergedPrinters(): Printer[] {
     if (!printers?.length) return []
-    return applyPrinterLiveUpdates(printers, liveStatus).filter((p) =>
-      isPrinterReachableForBulk(p, liveStatus),
+    return applyPrinterLiveUpdates(printers, mergedLive).filter((p) =>
+      isPrinterMoonrakerReachable(p, mergedLive),
     )
   }
 
   /** Printers with a Home Assistant power entity (mains toggle), regardless of Moonraker reachability. */
   function haPowerLinkedPrinters(): Printer[] {
     if (!printers?.length) return []
-    return applyPrinterLiveUpdates(printers, liveStatus).filter((p) => Boolean(p.ha_power_entity_id?.trim()))
+    return applyPrinterLiveUpdates(printers, mergedLive).filter((p) => Boolean(p.ha_power_entity_id?.trim()))
   }
 
   async function runBulkHomeOnTargets(targets: Printer[]) {
@@ -636,6 +686,13 @@ export function FarmPage() {
     })
     setActionNotice(`Print started on ${name}.`)
     void loadPrinters()
+    if (!useMocks) {
+      void apiFetch<PrinterLiveSyncResponse>(`/printers/${printerId}/live/sync`, { method: 'POST' })
+        .then((sync) => applyLivePatch(sync.live))
+        .catch(() => {
+          /* SSE will catch up */
+        })
+    }
   }
 
   return (
@@ -658,7 +715,13 @@ export function FarmPage() {
                   {reachableMergedPrinters().length} reachable · {haPowerLinkedPrinters().length} HA power
                 </span>
               </div>
-              <div className="farm-bulk-panel-actions" role="group" aria-label="Bulk Moonraker commands">
+              <div className="farm-bulk-panel-actions">
+                {reachableMergedPrinters().length > 0 ? (
+                  <div
+                    className="farm-bulk-moonraker-actions"
+                    role="group"
+                    aria-label="Bulk Moonraker commands"
+                  >
                 <button
                   type="button"
                   className="btn sm secondary farm-bulk-home-btn"
@@ -709,16 +772,17 @@ export function FarmPage() {
                     Preheat all
                   </button>
                 </div>
-                <div className="farm-bulk-actions-divider" aria-hidden />
+                  </div>
+                ) : null}
+                {reachableMergedPrinters().length > 0 && haPowerLinkedPrinters().length > 0 ? (
+                  <div className="farm-bulk-actions-divider" aria-hidden />
+                ) : null}
+                {haPowerLinkedPrinters().length > 0 ? (
                 <div className="farm-bulk-ha-power-row" role="group" aria-label="Hardware power via Home Assistant">
                   <button
                     type="button"
                     className="btn sm secondary farm-bulk-ha-power-on-btn"
-                    disabled={
-                      bulkActionsBusy ||
-                      bulkConfirm !== null ||
-                      haPowerLinkedPrinters().length === 0
-                    }
+                    disabled={bulkActionsBusy || bulkConfirm !== null}
                     onClick={() => requestBulkHaPower('on')}
                     title="Home Assistant turn_on on each printer’s linked entity"
                   >
@@ -727,17 +791,14 @@ export function FarmPage() {
                   <button
                     type="button"
                     className="btn sm danger farm-bulk-ha-power-off-btn"
-                    disabled={
-                      bulkActionsBusy ||
-                      bulkConfirm !== null ||
-                      haPowerLinkedPrinters().length === 0
-                    }
+                    disabled={bulkActionsBusy || bulkConfirm !== null}
                     onClick={() => requestBulkHaPower('off')}
                     title="Requires confirmation — turn_off mains-style entities"
                   >
                     Power off all
                   </button>
                 </div>
+                ) : null}
               </div>
             </section>
           ) : null}
@@ -764,7 +825,7 @@ export function FarmPage() {
 
       {printers && printers.length > 0 ? (
         <FarmMaterialWarning
-          printers={applyPrinterLiveUpdates(printers, liveStatus)}
+          printers={applyPrinterLiveUpdates(printers, mergedLive)}
           showPlannerHint={isManager}
         />
       ) : null}
@@ -790,7 +851,7 @@ export function FarmPage() {
       ) : null}
 
       {printers && !useMocks ? (
-        <FarmLiveDebugPanel dbPrinters={printers} live={liveStatus} meta={liveStreamMeta} />
+        <FarmLiveDebugPanel dbPrinters={printers} live={mergedLive} meta={liveStreamMeta} />
       ) : null}
 
       {!printers ? <p>Loading…</p> : null}
@@ -804,13 +865,14 @@ export function FarmPage() {
           className={`grid farm-printer-grid${viewMode === 'advanced' ? ' farm-printer-grid-advanced' : ''}`}
         >
           {canManagePrinters ? <AddPrinterCard onClick={openAddPrinter} /> : null}
-          {applyPrinterLiveUpdates(printers, liveStatus).map((p) => (
+          {applyPrinterLiveUpdates(printers, mergedLive).map((p) => (
             <PrinterFarmCard
               key={p.id}
               printer={p}
               viewMode={viewMode}
               preheatPresets={preheatPresets}
-              moonrakerLive={isPrinterMoonrakerLive(p, liveStatus)}
+              moonrakerLive={isPrinterMoonrakerLive(p, mergedLive)}
+              moonrakerReachable={isPrinterMoonrakerReachable(p, mergedLive)}
               isManager={canManagePrinters}
               syncing={syncingId === p.id}
               controlsDisabled={!canManagePrinters}
@@ -892,6 +954,8 @@ export function FarmPage() {
           preview={dropPrintPreview}
           onClose={() => setDropPrintPreview(null)}
           onPrinted={onDropPrintCompleted}
+          onFarmRefresh={() => void loadPrinters()}
+          onLivePatch={applyLivePatch}
         />
       ) : null}
 

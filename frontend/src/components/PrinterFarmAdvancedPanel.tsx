@@ -6,6 +6,8 @@ import type { Printer } from '../types/printer'
 type Props = {
   printer: Printer
   preheatPresets: MaterialPreheatPreset[]
+  /** When false, hide Motion / Heat / Print controls (Moonraker offline). */
+  moonrakerReachable?: boolean
   disabled?: boolean
   busyAction: PrinterControlAction | null
   onAction: (action: PrinterControlAction) => void
@@ -45,63 +47,69 @@ function ControlBtn({
 export function PrinterFarmAdvancedPanel({
   printer,
   preheatPresets,
+  moonrakerReachable = true,
   disabled,
   busyAction,
   onAction,
 }: Props) {
   const hasPower = Boolean(printer.ha_power_entity_id?.trim())
   const jobPhase = printJobPhase(printer.last_known_status)
-  const showPrintControls = showPrintJobControls(printer.last_known_status)
+  const showPrintControls =
+    moonrakerReachable && showPrintJobControls(printer.last_known_status)
 
   return (
     <div className="printer-advanced-panel">
-      <div className="printer-advanced-group">
-        <h3 className="printer-advanced-label">Motion</h3>
-        <div className="printer-advanced-actions">
-          <ControlBtn
-            label="Home all"
-            action="home"
-            busyAction={busyAction}
-            disabled={disabled}
-            onAction={onAction}
-          />
-          <ControlBtn
-            label="Home XY"
-            action="home_xy"
-            busyAction={busyAction}
-            disabled={disabled}
-            onAction={onAction}
-          />
-        </div>
-      </div>
-
-      <div className="printer-advanced-group">
-        <h3 className="printer-advanced-label">Heat</h3>
-        <div className="printer-advanced-actions">
-          {preheatPresets.length === 0 ? (
-            <span className="muted small">No presets — configure in Preheat presets…</span>
-          ) : (
-            preheatPresets.map((preset) => (
+      {moonrakerReachable ? (
+        <>
+          <div className="printer-advanced-group">
+            <h3 className="printer-advanced-label">Motion</h3>
+            <div className="printer-advanced-actions">
               <ControlBtn
-                key={preset.id}
-                label={preset.name}
-                action={preheatControlAction(preset.id)}
+                label="Home all"
+                action="home"
                 busyAction={busyAction}
                 disabled={disabled}
                 onAction={onAction}
-                title={`Hotend ${preset.hotend_c}°C · Bed ${preset.bed_c}°C`}
               />
-            ))
-          )}
-          <ControlBtn
-            label="Cooldown"
-            action="cooldown"
-            busyAction={busyAction}
-            disabled={disabled}
-            onAction={onAction}
-          />
-        </div>
-      </div>
+              <ControlBtn
+                label="Home XY"
+                action="home_xy"
+                busyAction={busyAction}
+                disabled={disabled}
+                onAction={onAction}
+              />
+            </div>
+          </div>
+
+          <div className="printer-advanced-group">
+            <h3 className="printer-advanced-label">Heat</h3>
+            <div className="printer-advanced-actions">
+              {preheatPresets.length === 0 ? (
+                <span className="muted small">No presets — configure in Preheat presets…</span>
+              ) : (
+                preheatPresets.map((preset) => (
+                  <ControlBtn
+                    key={preset.id}
+                    label={preset.name}
+                    action={preheatControlAction(preset.id)}
+                    busyAction={busyAction}
+                    disabled={disabled}
+                    onAction={onAction}
+                    title={`Hotend ${preset.hotend_c}°C · Bed ${preset.bed_c}°C`}
+                  />
+                ))
+              )}
+              <ControlBtn
+                label="Cooldown"
+                action="cooldown"
+                busyAction={busyAction}
+                disabled={disabled}
+                onAction={onAction}
+              />
+            </div>
+          </div>
+        </>
+      ) : null}
 
       {showPrintControls ? (
         <div className="printer-advanced-group">

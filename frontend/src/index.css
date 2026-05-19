@@ -548,6 +548,13 @@ dd {
   gap: 0.4rem;
 }
 
+.farm-bulk-moonraker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .farm-bulk-preheat-row {
   display: inline-flex;
   flex-wrap: wrap;

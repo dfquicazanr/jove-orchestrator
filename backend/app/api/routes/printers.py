@@ -1,4 +1,5 @@
 import asyncio
+import time
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -20,6 +21,8 @@ from app.schemas.printer import (
     PrinterControlResult,
     PrinterCreate,
     PrinterHomeBody,
+    PrinterLivePatchOut,
+    PrinterLiveSyncOut,
     PrinterOut,
     PrinterPreheatBody,
     PrinterPrintGcodeResult,
@@ -38,9 +41,24 @@ from app.services.moonraker_control import (
 )
 from app.services.moonraker_print import upload_gcode_to_moonraker
 from app.services.moonraker_url import MoonrakerUrlError, normalize_moonraker_base_url
-from app.services.moonraker_watch import moonraker_watch
+from app.services.moonraker_watch import PrinterLiveUpdate, moonraker_watch
 
 router = APIRouter()
+
+
+def _live_patch_out(live: PrinterLiveUpdate) -> PrinterLivePatchOut:
+    return PrinterLivePatchOut(
+        printer_id=live.printer_id,
+        last_known_status=live.last_known_status,
+        last_moonraker_error=live.last_moonraker_error,
+        connected=live.connected,
+        extruder_actual_c=live.extruder_actual_c,
+        extruder_target_c=live.extruder_target_c,
+        bed_actual_c=live.bed_actual_c,
+        bed_target_c=live.bed_target_c,
+        ts=time.time(),
+        ws_live=live.moonraker_ws_connected,
+    )
 
 
 def _printer_out(p: Printer) -> PrinterOut:
@@ -276,6 +294,9 @@ async def print_gcode_on_printer(
     if not ok:
         raise HTTPException(status_code=502, detail=msg or "Moonraker upload failed")
 
+    if get_settings().moonraker_watch_enabled:
+        await moonraker_watch.ensure_websocket_watch(p.id)
+
     remaining: float | None = None
     if filament_used_grams is not None and filament_used_grams > 0:
         p.remaining_filament_grams = max(0.0, p.remaining_filament_grams - filament_used_grams)
@@ -395,24 +416,46 @@ async def moonraker_ping(
     _: User = Depends(require_manager),
     db: Session = Depends(get_db),
 ):
+    result = await _sync_printer_live_row(printer_id, db)
+    return MoonrakerPingResult(ok=result.ok, message=result.message)
+
+
+@router.post("/{printer_id}/live/sync", response_model=PrinterLiveSyncOut)
+async def sync_printer_live(
+    printer_id: int,
+    _: User = Depends(require_manager),
+    db: Session = Depends(get_db),
+):
+    """Ping Moonraker, refresh live temps/status, ensure WS — returns data for Farm UI polling."""
+    return await _sync_printer_live_row(printer_id, db)
+
+
+async def _sync_printer_live_row(printer_id: int, db: Session) -> PrinterLiveSyncOut:
     p = db.get(Printer, printer_id)
     if p is None:
         raise HTTPException(status_code=404, detail="Printer not found")
-    ok, err, derived, wh_st, wh_msg = await ping_printer(p)
+    ok, err, derived, _wh_st, _wh_msg = await ping_printer(p)
     apply_ping_to_printer(p, ok, err, derived)
     p.updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(p)
     if get_settings().moonraker_watch_enabled:
-        await moonraker_watch.broadcast_printer_state(
-            p.id,
+        # sync_printer_live already HTTP-refreshes and SSE-publishes; do not manual_ping
+        # broadcast here — that transport clears temps when WS is still connecting.
+        live = await moonraker_watch.sync_printer_live(p.id)
+    else:
+        live = PrinterLiveUpdate(
+            printer_id=p.id,
             last_known_status=p.last_known_status,
             last_moonraker_error=p.last_moonraker_error,
             connected=ok,
-            persist=False,
-            http_klipper_snapshot=(wh_st, wh_msg),
         )
-    return MoonrakerPingResult(ok=ok, message=err)
+    return PrinterLiveSyncOut(
+        ok=ok,
+        message=err,
+        printer=_printer_out(p),
+        live=_live_patch_out(live),
+    )
 
 
 @router.post("/{printer_id}/power/on")

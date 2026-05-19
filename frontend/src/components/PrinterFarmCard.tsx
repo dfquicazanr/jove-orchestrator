@@ -15,6 +15,8 @@ type Props = {
   preheatPresets?: MaterialPreheatPreset[]
   /** Moonraker WebSocket subscription is active for this printer. */
   moonrakerLive?: boolean
+  /** Moonraker HTTP/WS reachable — motion, heat, print, send G-code. */
+  moonrakerReachable?: boolean
   isManager: boolean
   syncing: boolean
   controlsDisabled?: boolean
@@ -37,6 +39,7 @@ export function PrinterFarmCard({
   viewMode = 'simple',
   preheatPresets = [],
   moonrakerLive,
+  moonrakerReachable = true,
   isManager,
   syncing,
   controlsDisabled,
@@ -220,17 +223,19 @@ export function PrinterFarmCard({
                     >
                       {syncing ? 'Syncing…' : 'Sync from Moonraker'}
                     </button>
-                    <button
-                      type="button"
-                      className="printer-menu-item"
-                      role="menuitem"
-                      onClick={() => {
-                        onSendGcode(p)
-                        closeMenu()
-                      }}
-                    >
-                      Send G-code…
-                    </button>
+                    {moonrakerReachable ? (
+                      <button
+                        type="button"
+                        className="printer-menu-item"
+                        role="menuitem"
+                        onClick={() => {
+                          onSendGcode(p)
+                          closeMenu()
+                        }}
+                      >
+                        Send G-code…
+                      </button>
+                    ) : null}
                     <div className="printer-menu-divider" />
                     <button
                       type="button"
@@ -381,6 +386,7 @@ export function PrinterFarmCard({
         <PrinterFarmAdvancedPanel
           printer={p}
           preheatPresets={preheatPresets}
+          moonrakerReachable={moonrakerReachable}
           disabled={controlsDisabled}
           busyAction={controlBusyAction}
           onAction={(action) => onControlAction?.(p, action)}

@@ -1,7 +1,11 @@
 import { useState, type FormEvent } from 'react'
 import { apiUpload } from '../api/upload'
 import type { DropPrintPreview } from '../lib/dropPrintPrepare'
-import { wakePrinterAndWaitReady, type WakeProgress } from '../lib/dropPrintWake'
+import {
+  wakePrinterAndWaitReady,
+  type WakeProgress,
+} from '../lib/dropPrintWake'
+import type { PrinterLiveUpdate } from '../hooks/usePrinterStatusStream'
 import {
   formatFilamentGrams,
   formatFilamentMeters,
@@ -22,6 +26,10 @@ type Props = {
   preview: DropPrintPreview
   onClose: () => void
   onPrinted: (printerId: number, remainingFilamentGrams: number | null) => void
+  /** Refresh farm DB/SSE after wake pings or print (printer was off). */
+  onFarmRefresh?: () => void
+  /** Apply live/sync patches to farm cards during wake polling. */
+  onLivePatch?: (live: PrinterLiveUpdate) => void
 }
 
 function formatFileSize(bytes: number): string {
@@ -39,7 +47,13 @@ function massLabel(preview: DropPrintPreview): string {
   return base
 }
 
-export function DropPrintConfirmModal({ preview, onClose, onPrinted }: Props) {
+export function DropPrintConfirmModal({
+  preview,
+  onClose,
+  onPrinted,
+  onFarmRefresh,
+  onLivePatch,
+}: Props) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<WakeProgress | null>(null)
@@ -68,9 +82,11 @@ export function DropPrintConfirmModal({ preview, onClose, onPrinted }: Props) {
     setProgress(null)
     try {
       if (needsWake) {
-        await wakePrinterAndWaitReady(printer.id, setProgress)
+        await wakePrinterAndWaitReady(printer.id, setProgress, onLivePatch)
+        onFarmRefresh?.()
       }
       await uploadAndPrint()
+      onFarmRefresh?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start print')
       setProgress(null)

@@ -64,6 +64,30 @@ class MoonrakerPingResult(BaseModel):
     message: str | None = None
 
 
+class PrinterLivePatchOut(BaseModel):
+    """Latest live row (same fields as SSE ``data:`` JSON)."""
+
+    printer_id: int
+    last_known_status: str
+    last_moonraker_error: str | None = None
+    connected: bool = False
+    extruder_actual_c: float | None = None
+    extruder_target_c: float | None = None
+    bed_actual_c: float | None = None
+    bed_target_c: float | None = None
+    ts: float | None = None
+    ws_live: bool = False
+
+
+class PrinterLiveSyncOut(BaseModel):
+    """DB printer row plus live patch after ping + HTTP refresh + WS ensure."""
+
+    ok: bool
+    message: str | None = None
+    printer: PrinterOut
+    live: PrinterLivePatchOut
+
+
 class PrinterTestConnectionBody(BaseModel):
     moonraker_base_url: str = Field(max_length=512)
     moonraker_api_key: str | None = Field(default=None, max_length=512)

@@ -43,9 +43,31 @@ RECONNECT_MAX_SEC = 60.0
 DB_PERSIST_MIN_INTERVAL_SEC = 1.0
 WS_STALE_SEC = 20.0
 LIVE_REFRESH_INTERVAL_SEC = 10.0
+# Re-emit SSE with a fresh ``ts`` so clients know the watch is alive when values are steady.
+SSE_HEARTBEAT_INTERVAL_SEC = 15.0
 # When HTTP liveness marks a printer reachable but WS never attached, retry WS at most this often.
 HTTP_WS_PROMOTE_COOLDOWN_SEC = 15.0
 OBJECTS_QUERY_PATH = "/printer/objects/query?extruder&heater_bed&print_stats&webhooks"
+
+
+def _status_log_summary(status: dict[str, Any]) -> dict[str, Any]:
+    derived = derive_printer_status_from_status(status)
+    wh_state, wh_msg = extract_webhooks_summary_from_object_status(status)
+    ex_a, ex_t, bd_a, bd_t = extract_live_heater_temperatures(status)
+    ps = status.get("print_stats")
+    print_state = ps.get("state") if isinstance(ps, dict) else None
+    out: dict[str, Any] = {
+        "derived_status": derived,
+        "print_state": print_state,
+        "webhooks_state": wh_state,
+        "extruder_actual_c": ex_a,
+        "extruder_target_c": ex_t,
+        "bed_actual_c": bd_a,
+        "bed_target_c": bd_t,
+    }
+    if wh_msg:
+        out["webhooks_message"] = str(wh_msg)[:180]
+    return out
 
 
 @dataclass
@@ -92,6 +114,7 @@ class MoonrakerWatchService:
         self._coordinator_task: asyncio.Task[None] | None = None
         self._http_liveness_task: asyncio.Task[None] | None = None
         self._live_refresh_task: asyncio.Task[None] | None = None
+        self._sse_heartbeat_task: asyncio.Task[None] | None = None
         self._last_ws_message_at: dict[int, float] = {}
         self._printer_tasks: dict[int, asyncio.Task[None]] = {}
         self._printer_targets: dict[int, tuple[str, str | None]] = {}
@@ -130,14 +153,32 @@ class MoonrakerWatchService:
                 accumulated["webhooks"] = {}
             accumulated["webhooks"]["state"] = "ready"
             accumulated["webhooks"].pop("state_message", None)
+            log.info(
+                "moonraker ws printer %s: %s -> %s",
+                printer_id,
+                method,
+                _status_log_summary(accumulated),
+            )
             await self._publish_from_status(printer_id, accumulated, connected=True)
         elif method == "notify_klippy_shutdown":
             if not isinstance(accumulated.get("webhooks"), dict):
                 accumulated["webhooks"] = {}
             accumulated["webhooks"]["state"] = "shutdown"
+            log.info(
+                "moonraker ws printer %s: %s -> %s",
+                printer_id,
+                method,
+                _status_log_summary(accumulated),
+            )
             await self._publish_from_status(printer_id, accumulated, connected=True)
         elif method == "notify_klippy_disconnected":
             accumulated["webhooks"] = {"state": "startup"}
+            log.info(
+                "moonraker ws printer %s: %s -> %s",
+                printer_id,
+                method,
+                _status_log_summary(accumulated),
+            )
             await self._publish_from_status(printer_id, accumulated, connected=True)
         else:
             log.debug("ignoring unknown klippy notify %s params=%r", method, params)
@@ -153,6 +194,9 @@ class MoonrakerWatchService:
             )
         self._live_refresh_task = asyncio.create_task(
             self._live_refresh_loop(), name="moonraker-live-refresh"
+        )
+        self._sse_heartbeat_task = asyncio.create_task(
+            self._sse_heartbeat_loop(), name="moonraker-sse-heartbeat"
         )
 
     async def stop(self) -> None:
@@ -171,6 +215,13 @@ class MoonrakerWatchService:
             except asyncio.CancelledError:
                 pass
             self._live_refresh_task = None
+        if self._sse_heartbeat_task:
+            self._sse_heartbeat_task.cancel()
+            try:
+                await self._sse_heartbeat_task
+            except asyncio.CancelledError:
+                pass
+            self._sse_heartbeat_task = None
         if self._coordinator_task:
             self._coordinator_task.cancel()
             try:
@@ -198,6 +249,38 @@ class MoonrakerWatchService:
             except Exception:
                 log.exception("moonraker watch coordinator error")
             await asyncio.sleep(RELOAD_PRINTERS_SEC)
+
+    async def _sse_heartbeat_loop(self) -> None:
+        """Keep Farm SSE timestamps fresh when Klipper state is steady (no notify deltas)."""
+        await asyncio.sleep(SSE_HEARTBEAT_INTERVAL_SEC)
+        while self._running:
+            try:
+                if self._subscribers:
+                    async with self._lock:
+                        rows = [
+                            u
+                            for u in self._live.values()
+                            if u.connected and u.moonraker_ws_connected
+                        ]
+                    for update in rows:
+                        await self._fanout_sse(update.to_json())
+            except Exception:
+                log.exception("moonraker sse heartbeat error")
+            await asyncio.sleep(SSE_HEARTBEAT_INTERVAL_SEC)
+
+    async def _fanout_sse(self, payload: str) -> None:
+        for q in list(self._subscribers):
+            try:
+                q.put_nowait(payload)
+            except asyncio.QueueFull:
+                try:
+                    q.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                try:
+                    q.put_nowait(payload)
+                except asyncio.QueueFull:
+                    pass
 
     async def _live_refresh_loop(self) -> None:
         """Recover stuck UI when the WS stops sending ``notify_status_update``."""
@@ -256,9 +339,9 @@ class MoonrakerWatchService:
         for key, value in status.items():
             if isinstance(value, dict):
                 accumulated[key] = dict(value)
-        loop = asyncio.get_running_loop()
-        self._last_ws_message_at[printer_id] = loop.time()
-        await self._publish_from_status(printer_id, accumulated, connected=True)
+        await self._publish_from_status(
+            printer_id, accumulated, connected=True, transport="http_refresh"
+        )
 
     def _touch_ws_activity(self, printer_id: int) -> None:
         loop = asyncio.get_running_loop()
@@ -357,7 +440,7 @@ class MoonrakerWatchService:
         await self._restart_printer_task(printer_id, spec)
 
     async def _restart_printer_task(self, printer_id: int, spec: tuple[str, str | None]) -> None:
-        await self._stop_printer_task(printer_id)
+        await self._stop_printer_task(printer_id, keep_target=True)
         self._printer_targets[printer_id] = spec
         base_url, api_key = spec
         self._printer_tasks[printer_id] = asyncio.create_task(
@@ -365,10 +448,11 @@ class MoonrakerWatchService:
             name=f"moonraker-ws-{printer_id}",
         )
 
-    async def _stop_printer_task(self, printer_id: int) -> None:
+    async def _stop_printer_task(self, printer_id: int, *, keep_target: bool = False) -> None:
         task = self._printer_tasks.pop(printer_id, None)
-        self._printer_targets.pop(printer_id, None)
-        self._ws_object_state.pop(printer_id, None)
+        if not keep_target:
+            self._printer_targets.pop(printer_id, None)
+            self._ws_object_state.pop(printer_id, None)
         if task:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
@@ -429,6 +513,8 @@ class MoonrakerWatchService:
             accumulated.clear()
             await self._ws_send_identify(ws, api_key)
             sub_id = 1
+            next_rpc_id = 100
+            pending_refresh_ids: set[int] = set()
             await ws.send(
                 json.dumps(
                     {
@@ -446,11 +532,52 @@ class MoonrakerWatchService:
                 method = data.get("method")
                 if isinstance(method, str) and method.startswith("notify_klippy_"):
                     await self._record_klippy_notice(printer_id, method, data.get("params"))
+                    if method == "notify_klippy_ready":
+                        query_id = next_rpc_id
+                        next_rpc_id += 1
+                        pending_refresh_ids.add(query_id)
+                        await ws.send(
+                            json.dumps(
+                                {
+                                    "jsonrpc": "2.0",
+                                    # Re-subscribe after klippy reconnect so notify_status_update
+                                    # deltas continue in this same Moonraker WS session.
+                                    "method": "printer.objects.subscribe",
+                                    "params": {"objects": SUBSCRIBE_OBJECTS},
+                                    "id": query_id,
+                                }
+                            )
+                        )
                     continue
                 if method == "notify_status_update":
                     params = data.get("params")
                     if isinstance(params, list) and params and isinstance(params[0], dict):
+                        changed_objects = sorted(params[0].keys())
                         merge_printer_status_objects(accumulated, params[0])
+                        log.info(
+                            "moonraker ws printer %s: notify_status_update objects=%s summary=%s",
+                            printer_id,
+                            changed_objects,
+                            _status_log_summary(accumulated),
+                        )
+                        await self._publish_from_status(printer_id, accumulated, connected=True)
+                    continue
+
+                rpc_id = data.get("id")
+                if isinstance(rpc_id, int) and rpc_id in pending_refresh_ids and "result" in data:
+                    pending_refresh_ids.discard(rpc_id)
+                    result = data["result"]
+                    if isinstance(result, dict) and isinstance(result.get("status"), dict):
+                        for k, v in result["status"].items():
+                            if isinstance(v, dict):
+                                accumulated[k] = dict(v)
+                        log.info(
+                            "moonraker ws printer %s: post-ready subscribe refresh id=%s objects=%s summary=%s",
+                            printer_id,
+                            rpc_id,
+                            sorted(result["status"].keys()),
+                            _status_log_summary(accumulated),
+                        )
                         await self._publish_from_status(printer_id, accumulated, connected=True)
                     continue
 
@@ -461,6 +588,12 @@ class MoonrakerWatchService:
                         for k, v in result["status"].items():
                             if isinstance(v, dict):
                                 accumulated[k] = dict(v)
+                        log.info(
+                            "moonraker ws printer %s: subscribe snapshot objects=%s summary=%s",
+                            printer_id,
+                            sorted(accumulated.keys()),
+                            _status_log_summary(accumulated),
+                        )
                         await self._publish_from_status(printer_id, accumulated, connected=True)
                     continue
 
@@ -493,9 +626,15 @@ class MoonrakerWatchService:
         )
 
     async def _publish_from_status(
-        self, printer_id: int, status: dict[str, Any], *, connected: bool
+        self,
+        printer_id: int,
+        status: dict[str, Any],
+        *,
+        connected: bool,
+        transport: str = "websocket",
     ) -> None:
-        self._touch_ws_activity(printer_id)
+        if transport == "websocket":
+            self._touch_ws_activity(printer_id)
         derived = derive_printer_status_from_status(status)
         if derived is None:
             derived = PrinterStatus.offline.value if not connected else PrinterStatus.ready.value
@@ -509,7 +648,7 @@ class MoonrakerWatchService:
             derived,
             err,
             connected=connected,
-            transport="websocket",
+            transport=transport,
             klipper_webhooks_state=wh_st,
             klipper_state_message=wh_msg,
             ws_heater_temps=heater_temps,
@@ -591,6 +730,29 @@ class MoonrakerWatchService:
                     k_msg = prev.klipper_state_message if prev else None
                     last_ws_status = prev.last_ws_status if prev else None
                     last_ws_at = prev.last_ws_at if prev else None
+            elif transport == "http_refresh":
+                moonraker_ws_connected = bool(prev.moonraker_ws_connected) if prev else False
+                last_http_probe_at = prev.last_http_probe_at if prev else None
+                last_http_probe_ok = prev.last_http_probe_ok if prev else None
+                last_http_probe_source = prev.last_http_probe_source if prev else None
+                if connected:
+                    last_ws_status = status
+                    last_ws_at = now_iso
+                    k_ws = (
+                        klipper_webhooks_state
+                        if klipper_webhooks_state is not None
+                        else (prev.klipper_webhooks_state if prev else None)
+                    )
+                    k_msg = (
+                        klipper_state_message
+                        if klipper_state_message is not None
+                        else (prev.klipper_state_message if prev else None)
+                    )
+                else:
+                    last_ws_status = prev.last_ws_status if prev else None
+                    last_ws_at = prev.last_ws_at if prev else None
+                    k_ws = prev.klipper_webhooks_state if prev else None
+                    k_msg = prev.klipper_state_message if prev else None
             else:
                 moonraker_ws_connected = bool(prev.moonraker_ws_connected) if prev else False
                 last_ws_status = prev.last_ws_status if prev else None
@@ -601,10 +763,10 @@ class MoonrakerWatchService:
                 k_ws = prev.klipper_webhooks_state if prev else None
                 k_msg = prev.klipper_state_message if prev else None
 
-            if moonraker_ws_connected and connected:
-                if ws_heater_temps is not None:
-                    ex_a, ex_t, bd_a, bd_t = ws_heater_temps
-                elif prev:
+            if connected and ws_heater_temps is not None:
+                ex_a, ex_t, bd_a, bd_t = ws_heater_temps
+            elif moonraker_ws_connected and connected:
+                if prev:
                     ex_a = prev.extruder_actual_c
                     ex_t = prev.extruder_target_c
                     bd_a = prev.bed_actual_c
@@ -654,19 +816,7 @@ class MoonrakerWatchService:
                 or prev.bed_target_c != update.bed_target_c
             )
         if changed:
-            payload = update.to_json()
-            for q in list(self._subscribers):
-                try:
-                    q.put_nowait(payload)
-                except asyncio.QueueFull:
-                    try:
-                        q.get_nowait()
-                    except asyncio.QueueEmpty:
-                        pass
-                    try:
-                        q.put_nowait(payload)
-                    except asyncio.QueueFull:
-                        pass
+            await self._fanout_sse(update.to_json())
             if persist:
                 await self._maybe_persist(printer_id, status, error, connected)
 
@@ -689,6 +839,63 @@ class MoonrakerWatchService:
             persist=persist,
             transport="manual_ping",
             http_klipper_snapshot=http_klipper_snapshot,
+        )
+
+    async def ensure_websocket_watch(self, printer_id: int) -> None:
+        """(Re)start the Moonraker WS task when HTTP knows the printer is up (e.g. after wake)."""
+        await self._ensure_printer_target_loaded(printer_id)
+        if printer_id not in self._printer_targets:
+            return
+        live = self._live.get(printer_id)
+        if live is not None and live.moonraker_ws_connected:
+            return
+        spec = self._printer_targets[printer_id]
+        log.info("moonraker printer %s: ensuring ws task after http reachability", printer_id)
+        await self._restart_printer_task(printer_id, spec)
+
+    async def refresh_printer_now(self, printer_id: int) -> None:
+        """One-shot HTTP objects query → SSE (temps/status) while WS is still connecting."""
+        await self._ensure_printer_target_loaded(printer_id)
+        if printer_id not in self._printer_targets:
+            return
+        base_url, api_key = self._printer_targets[printer_id]
+        await self._refresh_printer_via_http(printer_id, base_url, api_key)
+
+    def get_live_update(self, printer_id: int) -> PrinterLiveUpdate | None:
+        return self._live.get(printer_id)
+
+    async def _ensure_printer_target_loaded(self, printer_id: int) -> None:
+        if printer_id in self._printer_targets:
+            return
+        spec = await asyncio.to_thread(self._load_single_printer_target, printer_id)
+        if spec is None:
+            return
+        log.info("moonraker printer %s: starting watch task (was not in targets)", printer_id)
+        await self._restart_printer_task(printer_id, spec)
+
+    def _load_single_printer_target(self, printer_id: int) -> tuple[str, str | None] | None:
+        db = SessionLocal()
+        try:
+            p = db.get(Printer, printer_id)
+            if p is None or not (p.moonraker_base_url or "").strip():
+                return None
+            return (p.moonraker_base_url.rstrip("/"), p.moonraker_api_key)
+        finally:
+            db.close()
+
+    async def sync_printer_live(self, printer_id: int) -> PrinterLiveUpdate:
+        """Ping path + HTTP objects refresh + WS ensure; returns row for API/SSE clients."""
+        await self._ensure_printer_target_loaded(printer_id)
+        await self.refresh_printer_now(printer_id)
+        await self.ensure_websocket_watch(printer_id)
+        live = self._live.get(printer_id)
+        if live is not None:
+            return live
+        return PrinterLiveUpdate(
+            printer_id=printer_id,
+            last_known_status=PrinterStatus.offline.value,
+            last_moonraker_error=None,
+            connected=False,
         )
 
     async def _maybe_persist(

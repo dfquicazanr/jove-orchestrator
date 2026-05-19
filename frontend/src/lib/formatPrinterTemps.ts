@@ -4,7 +4,9 @@ export function formatHeaterActualTarget(
   target: number | null | undefined,
 ): string {
   const aOk = typeof actual === 'number' && !Number.isNaN(actual)
-  const tOk = typeof target === 'number' && !Number.isNaN(target)
+  // Klipper uses target 0 when a heater is off; show actual only (not "69 → 0").
+  const tOk =
+    typeof target === 'number' && !Number.isNaN(target) && target > 0
   if (aOk && tOk) {
     return `${round1(actual)} → ${round1(target)}`
   }

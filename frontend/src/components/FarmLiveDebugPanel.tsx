@@ -64,9 +64,11 @@ export function FarmLiveDebugPanel({ dbPrinters, live, meta }: Props) {
       <summary className="farm-live-debug-summary">Live stream debug</summary>
       <div className="farm-live-debug-body">
         <p className="muted small">
-          Moonraker patches from <code className="inline-code">GET /printers/status/stream</code>.
-          Compare DB snapshot (<code className="inline-code">GET /printers</code>) with SSE and what
-          each card shows after merge.
+          Moonraker patches from <code className="inline-code">GET /printers/status/stream</code>{' '}
+          (only sent when a value changes). Compare DB snapshot (
+          <code className="inline-code">GET /printers</code>) with SSE and what each card shows after
+          merge. <strong>conn yes + Offline</strong> means Moonraker is up but Klipper is not (MCU
+          error, shutdown, or still booting).
         </p>
 
         <dl className="farm-live-debug-stream">
@@ -79,7 +81,7 @@ export function FarmLiveDebugPanel({ dbPrinters, live, meta }: Props) {
             </dd>
           </div>
           <div>
-            <dt>Last SSE message</dt>
+            <dt>Last SSE change</dt>
             <dd>
               {meta.lastEventAt != null
                 ? `${new Date(meta.lastEventAt).toLocaleTimeString()} — ${formatRelativeMs(meta.lastEventAt, nowMs)}`

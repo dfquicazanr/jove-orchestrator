@@ -59,6 +59,8 @@ export function usePrinterStatusStream(enabled: boolean): {
     const url = `${API_URL}/printers/status/stream?access_token=${encodeURIComponent(token)}`
 
     function pickTemp(next: number | null | undefined, prev: number | null | undefined): number | null {
+      // `null` is an explicit clear from backend (offline / no live heater data).
+      if (next === null) return null
       if (typeof next === 'number' && !Number.isNaN(next)) return next
       if (typeof prev === 'number' && !Number.isNaN(prev)) return prev
       return null
@@ -79,6 +81,7 @@ export function usePrinterStatusStream(enabled: boolean): {
           bed_actual_c: pickTemp(u.bed_actual_c, old?.bed_actual_c),
           bed_target_c: pickTemp(u.bed_target_c, old?.bed_target_c),
           ts: u.ts ?? Date.now() / 1000,
+          ws_live: u.ws_live ?? old?.ws_live,
         })
         return next
       })

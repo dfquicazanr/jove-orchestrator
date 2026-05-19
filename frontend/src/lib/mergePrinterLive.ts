@@ -2,6 +2,8 @@ import type { PrinterLiveUpdate } from '../hooks/usePrinterStatusStream'
 import type { Printer } from '../types/printer'
 
 const OFFLINE_LIKE = new Set(['offline', 'powered_off'])
+/** No green "live" pulse — Moonraker may be connected while Klipper is down. */
+const NOT_MOONRAKER_LIVE_PULSE = new Set(['offline', 'powered_off', 'error'])
 
 function dbLooksReachable(status: string): boolean {
   return !OFFLINE_LIKE.has(status)
@@ -19,20 +21,22 @@ function pickTemp(
   next: number | null | undefined,
   prev: number | null | undefined,
 ): number | null | undefined {
+  if (next === null) return null
   if (typeof next === 'number' && !Number.isNaN(next)) return next
   if (typeof prev === 'number' && !Number.isNaN(prev)) return prev
   return prev
 }
 
 function mergeLiveFields(p: Printer, u: PrinterLiveUpdate): Printer {
+  const offlineLike = OFFLINE_LIKE.has(u.last_known_status)
   return {
     ...p,
     last_known_status: u.last_known_status,
     last_moonraker_error: u.last_moonraker_error,
-    extruder_actual_c: pickTemp(u.extruder_actual_c, p.extruder_actual_c) ?? null,
-    extruder_target_c: pickTemp(u.extruder_target_c, p.extruder_target_c) ?? null,
-    bed_actual_c: pickTemp(u.bed_actual_c, p.bed_actual_c) ?? null,
-    bed_target_c: pickTemp(u.bed_target_c, p.bed_target_c) ?? null,
+    extruder_actual_c: offlineLike ? null : (pickTemp(u.extruder_actual_c, p.extruder_actual_c) ?? null),
+    extruder_target_c: offlineLike ? null : (pickTemp(u.extruder_target_c, p.extruder_target_c) ?? null),
+    bed_actual_c: offlineLike ? null : (pickTemp(u.bed_actual_c, p.bed_actual_c) ?? null),
+    bed_target_c: offlineLike ? null : (pickTemp(u.bed_target_c, p.bed_target_c) ?? null),
   }
 }
 
@@ -47,10 +51,18 @@ export function applyPrinterLiveUpdates(
     if (isStaleDisconnectedLive(p, u)) {
       return {
         ...p,
-        extruder_actual_c: pickTemp(u.extruder_actual_c, p.extruder_actual_c) ?? null,
-        extruder_target_c: pickTemp(u.extruder_target_c, p.extruder_target_c) ?? null,
-        bed_actual_c: pickTemp(u.bed_actual_c, p.bed_actual_c) ?? null,
-        bed_target_c: pickTemp(u.bed_target_c, p.bed_target_c) ?? null,
+        extruder_actual_c: OFFLINE_LIKE.has(u.last_known_status)
+          ? null
+          : (pickTemp(u.extruder_actual_c, p.extruder_actual_c) ?? null),
+        extruder_target_c: OFFLINE_LIKE.has(u.last_known_status)
+          ? null
+          : (pickTemp(u.extruder_target_c, p.extruder_target_c) ?? null),
+        bed_actual_c: OFFLINE_LIKE.has(u.last_known_status)
+          ? null
+          : (pickTemp(u.bed_actual_c, p.bed_actual_c) ?? null),
+        bed_target_c: OFFLINE_LIKE.has(u.last_known_status)
+          ? null
+          : (pickTemp(u.bed_target_c, p.bed_target_c) ?? null),
       }
     }
     return mergeLiveFields(p, u)
@@ -67,5 +79,7 @@ export function isPrinterMoonrakerLive(
   if (isStaleDisconnectedLive(dbPrinter, u)) {
     return dbLooksReachable(dbPrinter.last_known_status)
   }
-  return u.connected
+  if (!u.connected) return false
+  if (NOT_MOONRAKER_LIVE_PULSE.has(u.last_known_status)) return false
+  return u.ws_live === true || u.connected
 }
