@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react'
 import { parseCopies, uploadGcodeFile } from '../lib/gcodeUpload'
+import { randomId } from '../lib/randomId'
 
 type PendingRow = {
   id: string
@@ -15,7 +16,7 @@ type Props = {
 
 function newRow(file: File, defaults: { material: string; color: string }): PendingRow {
   return {
-    id: crypto.randomUUID(),
+    id: randomId(),
     file,
     copies: '1',
     material: defaults.material,

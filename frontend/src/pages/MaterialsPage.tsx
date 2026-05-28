@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { apiFetch } from '../api/client'
+import { randomId } from '../lib/randomId'
 import { useAuth } from '../auth/AuthContext'
 import type { MaterialColorPreset, MaterialPreheatPreset } from '../types/materialPreheat'
 import { MOCK_PREHEAT_PRESETS } from '../types/materialPreheat'
@@ -52,11 +53,11 @@ function buildColorMap(presets: MaterialPreheatPreset[]): Record<string, ColorRo
 }
 
 function newMaterialRow(): MaterialRow {
-  return { key: `new-${crypto.randomUUID()}`, name: '', hotend_c: '200', bed_c: '60', default_density_g_cm3: '' }
+  return { key: `new-${randomId()}`, name: '', hotend_c: '200', bed_c: '60', default_density_g_cm3: '' }
 }
 
 function newColorRow(): ColorRow {
-  return { key: `new-${crypto.randomUUID()}`, name: '', hex: '#808080', is_default: false, notes: '' }
+  return { key: `new-${randomId()}`, name: '', hex: '#808080', is_default: false, notes: '' }
 }
 
 function materialRowId(row: MaterialRow): number | null {

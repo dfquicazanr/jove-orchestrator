@@ -22,6 +22,7 @@ import { computePlannerSessionSummary } from '../lib/plannerSessionSummary'
 import { buildPrinterSchedule, type ScheduleJobInput } from '../lib/printerSchedule'
 import { useUnsavedPlannerWarning } from '../hooks/useUnsavedPlannerWarning'
 import { FARM_SUCCESS_TOAST_MS, useAutoDismiss } from '../hooks/useAutoDismiss'
+import { randomId } from '../lib/randomId'
 import type { GCodeFile } from '../types/gcode'
 import type { PlannerSessionItem } from '../types/plannerSession'
 import type { MaterialPreheatPreset } from '../types/materialPreheat'
@@ -31,7 +32,7 @@ import type { Printer } from '../types/printer'
 import type { QueueItem } from '../types/queue'
 
 function newSessionId(): string {
-  return crypto.randomUUID()
+  return randomId()
 }
 
 function fileToSessionItem(file: GCodeFile, copyIndex: number): PlannerSessionItem {

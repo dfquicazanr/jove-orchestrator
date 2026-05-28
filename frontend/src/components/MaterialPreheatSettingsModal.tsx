@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { apiFetch } from '../api/client'
+import { randomId } from '../lib/randomId'
 import type { MaterialPreheatPreset } from '../types/materialPreheat'
 
 type Row = {
@@ -27,7 +28,7 @@ function toRows(presets: MaterialPreheatPreset[]): Row[] {
 }
 
 function newRow(): Row {
-  return { key: `new-${crypto.randomUUID()}`, name: '', hotend_c: '200', bed_c: '60' }
+  return { key: `new-${randomId()}`, name: '', hotend_c: '200', bed_c: '60' }
 }
 
 export function MaterialPreheatSettingsModal({

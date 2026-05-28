@@ -1,4 +1,5 @@
 import { normalizePlannerSessionItem } from './plannerRequirements'
+import { randomId } from './randomId'
 import type { PlannerSessionItem } from '../types/plannerSession'
 
 const STORAGE_KEY = 'jove.planner.pendingImport'
@@ -11,7 +12,7 @@ export function peekPlannerImport(): PlannerSessionItem[] {
     if (!Array.isArray(parsed)) return []
     return parsed.map((row) =>
       normalizePlannerSessionItem({
-        sessionId: row.sessionId ?? crypto.randomUUID(),
+        sessionId: row.sessionId ?? randomId(),
         gcodeFileId: row.gcodeFileId ?? 0,
         displayName: row.displayName ?? '',
         originalFilename: row.originalFilename ?? '',

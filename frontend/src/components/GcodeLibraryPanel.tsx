@@ -11,6 +11,7 @@ import {
 import { parseGcodeFilePreview, type GcodeMetadataPreview } from '../lib/parseGcodeMetadata'
 import { defaultGcodeDisplayName, gcodeFileLabel, gcodeMaterialColorLabel } from '../lib/gcodeLabels'
 import { uploadGcodeFile } from '../lib/gcodeUpload'
+import { randomId } from '../lib/randomId'
 import type { MaterialPreheatPreset } from '../types/materialPreheat'
 import type { GCodeFile } from '../types/gcode'
 import { ColorPresetSelect } from './ColorPresetSelect'
@@ -151,7 +152,7 @@ export function GcodeLibraryPanel({
       colorPresetId: defaultColorPresetId,
     }
     const added = list.map((f) => ({
-      id: crypto.randomUUID(),
+      id: randomId(),
       file: f,
       displayName: defaultGcodeDisplayName(f.name),
       materialPresetId: defaults.materialPresetId,

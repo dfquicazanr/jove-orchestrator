@@ -8,6 +8,7 @@ import type { MaterialPreheatPreset } from '../types/materialPreheat'
 import { MOCK_PREHEAT_PRESETS } from '../types/materialPreheat'
 import { resolveSessionItemColor } from '../lib/plannerRequirements'
 import { appendPlannerImport } from '../lib/plannerSessionStorage'
+import { randomId } from '../lib/randomId'
 import type { PlannerSessionItem } from '../types/plannerSession'
 import type { PrintKit, PrintKitItemDraft } from '../types/printKit'
 
@@ -16,7 +17,7 @@ type ItemRow = PrintKitItemDraft & { key: string }
 function newItemRow(files: GCodeFile[], materials: MaterialPreheatPreset[]): ItemRow {
   const f = files[0]
   return {
-    key: crypto.randomUUID(),
+    key: randomId(),
     gcode_file_id: f?.id ?? 0,
     material_preset_id: f?.material_preset_id ?? materials[0]?.id ?? 0,
     material_color_preset_id: f?.material_color_preset_id ?? null,
@@ -25,7 +26,7 @@ function newItemRow(files: GCodeFile[], materials: MaterialPreheatPreset[]): Ite
 }
 
 function newSessionId(): string {
-  return crypto.randomUUID()
+  return randomId()
 }
 
 export function KitsPage() {
