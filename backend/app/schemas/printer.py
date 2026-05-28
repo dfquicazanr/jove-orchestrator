@@ -59,6 +59,17 @@ class PrinterOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PrinterHaPowerStatesOut(BaseModel):
+    """Printer id → HA mains power (``true`` on, ``false`` off, ``null`` unknown/unconfigured)."""
+
+    states: dict[int, bool | None]
+
+
+class PrinterHaPowerActionOut(BaseModel):
+    ok: bool = True
+    power_on: bool | None = None
+
+
 class MoonrakerPingResult(BaseModel):
     ok: bool
     message: str | None = None

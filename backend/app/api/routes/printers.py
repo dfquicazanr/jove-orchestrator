@@ -20,6 +20,8 @@ from app.schemas.printer import (
     MoonrakerPingResult,
     PrinterControlResult,
     PrinterCreate,
+    PrinterHaPowerActionOut,
+    PrinterHaPowerStatesOut,
     PrinterHomeBody,
     PrinterLivePatchOut,
     PrinterLiveSyncOut,
@@ -85,6 +87,26 @@ def list_printers(
     db: Session = Depends(get_db),
 ):
     return [_printer_out(p) for p in db.query(Printer).order_by(Printer.id.asc()).all()]
+
+
+@router.get("/ha-power/states", response_model=PrinterHaPowerStatesOut)
+async def list_printer_ha_power_states(
+    _: User = Depends(require_viewer_or_manager),
+    db: Session = Depends(get_db),
+):
+    """Current Home Assistant on/off for each printer with ``ha_power_entity_id``."""
+    rows = db.query(Printer).order_by(Printer.id.asc()).all()
+    entity_by_printer: dict[int, str] = {}
+    entity_ids: list[str] = []
+    for p in rows:
+        eid = (p.ha_power_entity_id or "").strip()
+        if not eid:
+            continue
+        entity_by_printer[p.id] = eid
+        entity_ids.append(eid)
+    ha_states = await ha_svc.get_power_states_for_entities(db, entity_ids)
+    states: dict[int, bool | None] = {pid: ha_states.get(eid) for pid, eid in entity_by_printer.items()}
+    return PrinterHaPowerStatesOut(states=states)
 
 
 @router.post("", response_model=PrinterOut, status_code=status.HTTP_201_CREATED)
@@ -458,7 +480,7 @@ async def _sync_printer_live_row(printer_id: int, db: Session) -> PrinterLiveSyn
     )
 
 
-@router.post("/{printer_id}/power/on")
+@router.post("/{printer_id}/power/on", response_model=PrinterHaPowerActionOut)
 async def power_on(
     printer_id: int,
     _: User = Depends(require_manager),
@@ -471,12 +493,15 @@ async def power_on(
         raise HTTPException(status_code=400, detail="Printer has no ha_power_entity_id configured")
     try:
         await ha_svc.turn_entity_on(p.ha_power_entity_id, db)
+        power_on_state = await ha_svc.read_power_state_after_service(
+            db, p.ha_power_entity_id, expected=True
+        )
     except ha_svc.HomeAssistantError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
-    return {"ok": True}
+    return PrinterHaPowerActionOut(ok=True, power_on=power_on_state)
 
 
-@router.post("/{printer_id}/power/off")
+@router.post("/{printer_id}/power/off", response_model=PrinterHaPowerActionOut)
 async def power_off(
     printer_id: int,
     _: User = Depends(require_manager),
@@ -489,6 +514,9 @@ async def power_off(
         raise HTTPException(status_code=400, detail="Printer has no ha_power_entity_id configured")
     try:
         await ha_svc.turn_entity_off(p.ha_power_entity_id, db)
+        power_on_state = await ha_svc.read_power_state_after_service(
+            db, p.ha_power_entity_id, expected=False
+        )
     except ha_svc.HomeAssistantError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
-    return {"ok": True}
+    return PrinterHaPowerActionOut(ok=True, power_on=power_on_state)

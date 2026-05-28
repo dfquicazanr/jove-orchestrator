@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { FilamentSpiralGraphic } from './FilamentSpiralGraphic'
+import { HaPowerToggle } from './HaPowerToggle'
 import { PrinterFarmAdvancedPanel } from './PrinterFarmAdvancedPanel'
 import type { PrinterControlAction } from '../lib/printerControlActions'
 import type { MaterialPreheatPreset } from '../types/materialPreheat'
@@ -17,6 +18,8 @@ type Props = {
   moonrakerLive?: boolean
   /** Moonraker HTTP/WS reachable — motion, heat, print, send G-code. */
   moonrakerReachable?: boolean
+  /** Home Assistant mains power state when linked (`true` on, `false` off, `null` unknown). */
+  haPowerOn?: boolean | null
   isManager: boolean
   syncing: boolean
   controlsDisabled?: boolean
@@ -40,6 +43,7 @@ export function PrinterFarmCard({
   preheatPresets = [],
   moonrakerLive,
   moonrakerReachable = true,
+  haPowerOn,
   isManager,
   syncing,
   controlsDisabled,
@@ -357,29 +361,13 @@ export function PrinterFarmCard({
       ) : null}
 
       {viewMode !== 'advanced' && isManager && p.ha_power_entity_id?.trim() && onControlAction ? (
-        <div className="printer-ha-power-bar">
-          <span className="printer-ha-power-label">Hardware power</span>
-          <div className="printer-ha-power-actions">
-            <button
-              type="button"
-              className="btn sm secondary"
-              disabled={Boolean(controlsDisabled) || controlBusyAction !== null}
-              title="Home Assistant turn_on on the linked entity"
-              onClick={() => onControlAction(p, 'power_on')}
-            >
-              {controlBusyAction === 'power_on' ? '…' : 'On'}
-            </button>
-            <button
-              type="button"
-              className="btn sm danger"
-              disabled={Boolean(controlsDisabled) || controlBusyAction !== null}
-              title="Requires confirmation — HA turn_off on the linked entity"
-              onClick={() => onControlAction(p, 'power_off')}
-            >
-              {controlBusyAction === 'power_off' ? '…' : 'Off'}
-            </button>
-          </div>
-        </div>
+        <HaPowerToggle
+          powerOn={haPowerOn}
+          disabled={controlsDisabled}
+          busyAction={controlBusyAction}
+          onPowerOn={() => onControlAction(p, 'power_on')}
+          onPowerOff={() => onControlAction(p, 'power_off')}
+        />
       ) : null}
 
       {viewMode === 'advanced' ? (
@@ -387,6 +375,7 @@ export function PrinterFarmCard({
           printer={p}
           preheatPresets={preheatPresets}
           moonrakerReachable={moonrakerReachable}
+          haPowerOn={haPowerOn}
           disabled={controlsDisabled}
           busyAction={controlBusyAction}
           onAction={(action) => onControlAction?.(p, action)}

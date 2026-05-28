@@ -1371,6 +1371,14 @@ dd {
   flex-wrap: wrap;
 }
 
+.printer-ha-power-inline-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 .printer-ha-power-label {
   font-size: 0.8rem;
   font-weight: 600;
@@ -1378,10 +1386,105 @@ dd {
   letter-spacing: 0.02em;
 }
 
-.printer-ha-power-actions {
-  display: flex;
-  gap: 0.45rem;
-  flex-wrap: wrap;
+.printer-ha-power-status {
+  font-weight: 400;
+  font-size: 0.75rem;
+}
+
+.ha-power-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #aabbcf;
+  font: inherit;
+  flex-shrink: 0;
+}
+
+.ha-power-switch:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ha-power-switch-track {
+  position: relative;
+  display: block;
+  width: 2.6rem;
+  height: 1.45rem;
+  border-radius: 999px;
+  background: #2a3544;
+  border: 1px solid #3d4f66;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.ha-power-switch-thumb {
+  position: absolute;
+  top: 50%;
+  left: 0.14rem;
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 50%;
+  background: #e8eef7;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transform: translateY(-50%);
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.ha-power-switch.is-on .ha-power-switch-track {
+  background: rgba(72, 160, 120, 0.45);
+  border-color: rgba(96, 200, 150, 0.65);
+}
+
+.ha-power-switch.is-on .ha-power-switch-thumb {
+  transform: translate(1.15rem, -50%);
+  background: #dfffe8;
+}
+
+.ha-power-switch.is-unknown .ha-power-switch-track {
+  background: rgba(180, 140, 60, 0.2);
+  border-color: rgba(210, 170, 80, 0.45);
+  border-style: dashed;
+}
+
+.ha-power-switch.is-unknown .ha-power-switch-thumb {
+  background: #c8d0dc;
+}
+
+.ha-power-switch-text {
+  min-width: 1.6rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: left;
+}
+
+.ha-power-switch.is-on .ha-power-switch-text {
+  color: #9fdcb8;
+}
+
+.ha-power-switch:not(.is-on):not(.is-unknown) .ha-power-switch-text {
+  color: #8a96a8;
+}
+
+.ha-power-switch.is-unknown .ha-power-switch-text {
+  color: #d4b06a;
+}
+
+.ha-power-switch:hover:not(:disabled) .ha-power-switch-track {
+  border-color: #5a7394;
+}
+
+.ha-power-switch.is-on:hover:not(:disabled) .ha-power-switch-track {
+  border-color: rgba(120, 220, 170, 0.85);
+}
+
+.ha-power-switch:focus-visible {
+  outline: 2px solid rgba(138, 180, 255, 0.75);
+  outline-offset: 3px;
+  border-radius: 999px;
 }
 
 .printer-card-inline-feedback {

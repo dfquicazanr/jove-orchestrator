@@ -33,6 +33,12 @@ import { loadFarmViewMode, saveFarmViewMode, type FarmViewMode } from '../lib/fa
 import { mockPrintersMode } from '../lib/mockPrintersMode'
 import type { PrinterControlAction } from '../lib/printerControlActions'
 import { parsePreheatPresetId } from '../lib/printerControlActions'
+import {
+  HA_POWER_POLL_MS,
+  haPowerFromResponse,
+  mergeHaPowerServerStates,
+  type HaPowerPending,
+} from '../lib/haPowerStateSync'
 import { MOCK_PRINTERS, isMockPrinter } from '../mocks/mockPrinters'
 import type { MaterialPreheatPreset } from '../types/materialPreheat'
 import { MOCK_PREHEAT_PRESETS } from '../types/materialPreheat'
@@ -74,6 +80,9 @@ export function FarmPage() {
   const [haPowerOffConfirmPrinter, setHaPowerOffConfirmPrinter] = useState<Printer | null>(null)
   const [dropPrintPreview, setDropPrintPreview] = useState<DropPrintPreview | null>(null)
   const [dropPrintBusy, setDropPrintBusy] = useState(false)
+  const [haPowerStates, setHaPowerStates] = useState<Map<number, boolean | null>>(() => new Map())
+  const haPowerPendingRef = useRef<Map<number, HaPowerPending>>(new Map())
+  const haPowerBurstTimersRef = useRef<number[]>([])
   const useMocks = mockPrintersMode()
   const { live: liveStatus, meta: liveStreamMeta } = usePrinterStatusStream(!useMocks)
   const [livePatches, setLivePatches] = useState<Map<number, PrinterLiveUpdate>>(() => new Map())
@@ -180,6 +189,74 @@ export function FarmPage() {
     }
   }, [useMocks])
 
+  const loadHaPowerStates = useCallback(async () => {
+    if (useMocks) return
+    try {
+      const data = await apiFetch<{ states: Record<string, boolean | null> }>(
+        '/printers/ha-power/states',
+      )
+      const server = new Map<number, boolean | null>()
+      for (const [id, on] of Object.entries(data.states ?? {})) {
+        server.set(Number(id), on)
+      }
+      setHaPowerStates((prev) =>
+        mergeHaPowerServerStates(prev, server, haPowerPendingRef.current),
+      )
+    } catch {
+      /* HA optional — leave prior values */
+    }
+  }, [useMocks])
+
+  const patchHaPowerState = useCallback((printerId: number, on: boolean) => {
+    haPowerPendingRef.current.set(printerId, { on, since: Date.now() })
+    setHaPowerStates((prev) => {
+      const next = new Map(prev)
+      next.set(printerId, on)
+      return next
+    })
+  }, [])
+
+  const confirmHaPowerState = useCallback((printerId: number, on: boolean) => {
+    haPowerPendingRef.current.delete(printerId)
+    setHaPowerStates((prev) => {
+      const next = new Map(prev)
+      next.set(printerId, on)
+      return next
+    })
+  }, [])
+
+  const revertHaPowerState = useCallback((printerId: number, previous: boolean | null | undefined) => {
+    haPowerPendingRef.current.delete(printerId)
+    setHaPowerStates((prev) => {
+      const next = new Map(prev)
+      if (previous === true || previous === false) {
+        next.set(printerId, previous)
+      } else {
+        next.delete(printerId)
+      }
+      return next
+    })
+  }, [])
+
+  const scheduleHaPowerRefreshBurst = useCallback(() => {
+    for (const id of haPowerBurstTimersRef.current) {
+      window.clearTimeout(id)
+    }
+    const timers = [900, 2200, 5000].map((delay) =>
+      window.setTimeout(() => void loadHaPowerStates(), delay),
+    )
+    haPowerBurstTimersRef.current = timers
+    void loadHaPowerStates()
+  }, [loadHaPowerStates])
+
+  useEffect(() => {
+    return () => {
+      for (const id of haPowerBurstTimersRef.current) {
+        window.clearTimeout(id)
+      }
+    }
+  }, [])
+
   const loadPreheatPresets = useCallback(async () => {
     if (useMocks) {
       setPreheatPresets(MOCK_PREHEAT_PRESETS)
@@ -195,7 +272,14 @@ export function FarmPage() {
 
   useEffect(() => {
     void loadPrinters()
-  }, [loadPrinters])
+    void loadHaPowerStates()
+  }, [loadPrinters, loadHaPowerStates])
+
+  useEffect(() => {
+    if (useMocks) return
+    const id = window.setInterval(() => void loadHaPowerStates(), HA_POWER_POLL_MS)
+    return () => window.clearInterval(id)
+  }, [loadHaPowerStates, useMocks])
 
   /** Refresh DB when Moonraker connects; recover if SSE patches stop updating. */
   const prevLiveConnectedRef = useRef<Map<number, boolean>>(new Map())
@@ -282,6 +366,35 @@ export function FarmPage() {
       return
     }
 
+    if (action === 'power_on') {
+      const prevOn = haPowerStates.get(p.id) ?? null
+      patchHaPowerState(p.id, true)
+      setControlBusy({ printerId: p.id, action })
+      try {
+        const res = await apiFetch<{ ok: boolean; power_on?: boolean | null; message?: string | null }>(
+          `/printers/${p.id}/power/on`,
+          { method: 'POST' },
+        )
+        confirmHaPowerState(p.id, haPowerFromResponse(res.power_on, true))
+        scheduleHaPowerRefreshBurst()
+        const text = res.message ?? `${p.name}: mains power-on sent`
+        setActionNotice(text)
+        setPrinterControlFeedback(p.id, { kind: 'ok', text })
+      } catch (e) {
+        revertHaPowerState(p.id, prevOn)
+        const msg = e instanceof Error ? e.message : 'Command failed'
+        const friendly =
+          msg === 'Not Found'
+            ? 'Power API not found — rebuild the API container (`docker compose build api && docker compose up -d api`).'
+            : msg
+        setActionError(friendly)
+        setPrinterControlFeedback(p.id, { kind: 'err', text: friendly })
+      } finally {
+        setControlBusy(null)
+      }
+      return
+    }
+
     const merged =
       applyPrinterLiveUpdates([p], mergedLive).find((row) => row.id === p.id) ?? p
     if (
@@ -334,9 +447,6 @@ export function FarmPage() {
         case 'resume_print':
           res = await apiFetch(`${base}/control/print/resume`, { method: 'POST' })
           break
-        case 'power_on':
-          res = await apiFetch(`${base}/power/on`, { method: 'POST' })
-          break
         default:
           return
       }
@@ -359,17 +469,23 @@ export function FarmPage() {
   /** Used after HA power-off confirmation modal — same HTTP + feedback as power_on in onControlAction. */
   async function executeConfirmedHaPrinterPowerOff(p: Printer) {
     setActionError(null)
+    const prevOn = haPowerStates.get(p.id) ?? null
+    patchHaPowerState(p.id, false)
     setControlBusy({ printerId: p.id, action: 'power_off' })
     const base = `/printers/${p.id}`
     try {
-      const res = await apiFetch<{ ok: boolean; message?: string | null }>(`${base}/power/off`, {
-        method: 'POST',
-      })
+      const res = await apiFetch<{ ok: boolean; power_on?: boolean | null; message?: string | null }>(
+        `${base}/power/off`,
+        { method: 'POST' },
+      )
       const text = res.message ?? `${p.name}: mains power-off sent`
       setActionNotice(text)
       setPrinterControlFeedback(p.id, { kind: 'ok', text })
       setHaPowerOffConfirmPrinter(null)
+      confirmHaPowerState(p.id, haPowerFromResponse(res.power_on, false))
+      scheduleHaPowerRefreshBurst()
     } catch (e) {
+      revertHaPowerState(p.id, prevOn)
       const msg = e instanceof Error ? e.message : 'Command failed'
       const friendly =
         msg === 'Not Found'
@@ -489,28 +605,41 @@ export function FarmPage() {
 
   async function runBulkHaPowerOnTargets(targets: Printer[]) {
     setBulkActionsBusy(true)
+    const prevById = new Map(targets.map((p) => [p.id, haPowerStates.get(p.id) ?? null]))
+    for (const p of targets) patchHaPowerState(p.id, true)
     try {
       const results = await Promise.allSettled(
         targets.map((p) =>
-          apiFetch<{ ok: boolean; message?: string | null }>(`/printers/${p.id}/power/on`, {
-            method: 'POST',
-          }),
+          apiFetch<{ ok: boolean; power_on?: boolean | null; message?: string | null }>(
+            `/printers/${p.id}/power/on`,
+            { method: 'POST' },
+          ),
         ),
       )
       const fails: string[] = []
       let ok = 0
       results.forEach((r, i) => {
-        if (r.status === 'fulfilled') ok += 1
-        else {
+        if (r.status === 'fulfilled') {
+          ok += 1
+          confirmHaPowerState(
+            targets[i].id,
+            haPowerFromResponse(r.value.power_on, true),
+          )
+        } else {
+          revertHaPowerState(targets[i].id, prevById.get(targets[i].id))
           const reason = r.reason instanceof Error ? r.reason.message : String(r.reason)
           fails.push(`${targets[i].name}: ${reason}`)
         }
       })
       if (fails.length === 0) {
         setActionNotice(`Home Assistant turn_on sent for ${ok} printer(s).`)
+        scheduleHaPowerRefreshBurst()
       } else {
         setActionError(`Power on all: ${fails.length}/${targets.length} failed — ${fails.join(' · ')}`)
-        if (ok > 0) setActionNotice(`Power on succeeded for ${ok} printer(s); ${fails.length} failed.`)
+        if (ok > 0) {
+          setActionNotice(`Power on succeeded for ${ok} printer(s); ${fails.length} failed.`)
+          scheduleHaPowerRefreshBurst()
+        }
       }
     } finally {
       setBulkActionsBusy(false)
@@ -519,28 +648,41 @@ export function FarmPage() {
 
   async function runBulkHaPowerOffTargets(targets: Printer[]) {
     setBulkActionsBusy(true)
+    const prevById = new Map(targets.map((p) => [p.id, haPowerStates.get(p.id) ?? null]))
+    for (const p of targets) patchHaPowerState(p.id, false)
     try {
       const results = await Promise.allSettled(
         targets.map((p) =>
-          apiFetch<{ ok: boolean; message?: string | null }>(`/printers/${p.id}/power/off`, {
-            method: 'POST',
-          }),
+          apiFetch<{ ok: boolean; power_on?: boolean | null; message?: string | null }>(
+            `/printers/${p.id}/power/off`,
+            { method: 'POST' },
+          ),
         ),
       )
       const fails: string[] = []
       let ok = 0
       results.forEach((r, i) => {
-        if (r.status === 'fulfilled') ok += 1
-        else {
+        if (r.status === 'fulfilled') {
+          ok += 1
+          confirmHaPowerState(
+            targets[i].id,
+            haPowerFromResponse(r.value.power_on, false),
+          )
+        } else {
+          revertHaPowerState(targets[i].id, prevById.get(targets[i].id))
           const reason = r.reason instanceof Error ? r.reason.message : String(r.reason)
           fails.push(`${targets[i].name}: ${reason}`)
         }
       })
       if (fails.length === 0) {
         setActionNotice(`Home Assistant turn_off sent for ${ok} printer(s).`)
+        scheduleHaPowerRefreshBurst()
       } else {
         setActionError(`Power off all: ${fails.length}/${targets.length} failed — ${fails.join(' · ')}`)
-        if (ok > 0) setActionNotice(`Power off succeeded for ${ok} printer(s); ${fails.length} failed.`)
+        if (ok > 0) {
+          setActionNotice(`Power off succeeded for ${ok} printer(s); ${fails.length} failed.`)
+          scheduleHaPowerRefreshBurst()
+        }
       }
     } finally {
       setBulkActionsBusy(false)
@@ -873,6 +1015,7 @@ export function FarmPage() {
               preheatPresets={preheatPresets}
               moonrakerLive={isPrinterMoonrakerLive(p, mergedLive)}
               moonrakerReachable={isPrinterMoonrakerReachable(p, mergedLive)}
+              haPowerOn={haPowerStates.get(p.id)}
               isManager={canManagePrinters}
               syncing={syncingId === p.id}
               controlsDisabled={!canManagePrinters}

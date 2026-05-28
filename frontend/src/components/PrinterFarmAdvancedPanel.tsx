@@ -1,3 +1,4 @@
+import { HaPowerToggle } from './HaPowerToggle'
 import { preheatControlAction, type PrinterControlAction } from '../lib/printerControlActions'
 import { printJobPhase, showPrintJobControls } from '../lib/printJobControls'
 import type { MaterialPreheatPreset } from '../types/materialPreheat'
@@ -8,6 +9,7 @@ type Props = {
   preheatPresets: MaterialPreheatPreset[]
   /** When false, hide Motion / Heat / Print controls (Moonraker offline). */
   moonrakerReachable?: boolean
+  haPowerOn?: boolean | null
   disabled?: boolean
   busyAction: PrinterControlAction | null
   onAction: (action: PrinterControlAction) => void
@@ -48,6 +50,7 @@ export function PrinterFarmAdvancedPanel({
   printer,
   preheatPresets,
   moonrakerReachable = true,
+  haPowerOn,
   disabled,
   busyAction,
   onAction,
@@ -144,26 +147,14 @@ export function PrinterFarmAdvancedPanel({
       ) : null}
 
       {hasPower ? (
-        <div className="printer-advanced-group">
-          <h3 className="printer-advanced-label">Power</h3>
-          <div className="printer-advanced-actions">
-            <ControlBtn
-              label="On"
-              action="power_on"
-              busyAction={busyAction}
-              disabled={disabled}
-              onAction={onAction}
-            />
-            <ControlBtn
-              label="Off"
-              action="power_off"
-              busyAction={busyAction}
-              disabled={disabled}
-              onAction={onAction}
-              danger
-            />
-          </div>
-        </div>
+        <HaPowerToggle
+          variant="inline"
+          powerOn={haPowerOn}
+          disabled={disabled}
+          busyAction={busyAction}
+          onPowerOn={() => onAction('power_on')}
+          onPowerOff={() => onAction('power_off')}
+        />
       ) : null}
     </div>
   )
